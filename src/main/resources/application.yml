@@ -10,6 +10,11 @@ spring:
   jackson:
     serialization:
       fail-on-empty-beans: false
+  devtools:
+    restart:
+      enabled: true
+    livereload:
+      enabled: true
 
 server:
   port: 8080
