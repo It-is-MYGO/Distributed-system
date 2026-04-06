@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>秒杀系统演示 - 用户注册登录</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; }
+        .box { border:1px solid #DDD; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
+        .box h2 { margin-top:0 }
+        label { display:block; margin-top: 8px; }
+        input { width: 95%; padding: 8px; font-size: 14px; }
+        button { margin-top: 12px; padding: 10px 16px; }
+        #message { white-space:pre-wrap; margin-top: 12px; color:#1565c0; }
+    </style>
+</head>
+<body>
+    <h1>秒杀系统 Demo（前端页面）</h1>
+
+    <div class="box">
+        <h2>注册</h2>
+        <label>用户名 <input type="text" id="reg-username" /></label>
+        <label>密码 <input type="password" id="reg-password" /></label>
+        <button id="btn-register">注册</button>
+    </div>
+
+    <div class="box">
+        <h2>登录</h2>
+        <label>用户名 <input type="text" id="login-username" /></label>
+        <label>密码 <input type="password" id="login-password" /></label>
+        <button id="btn-login">登录</button>
+    </div>
+
+    <div id="message"></div>
+
+    <script>
+        const msg = document.getElementById('message');
+
+        document.getElementById('btn-register').onclick = async function () {
+            const username = document.getElementById('reg-username').value.trim();
+            const password = document.getElementById('reg-password').value;
+            if (!username || !password) { msg.textContent = '用户名/密码不能为空'; return; }
+            const resp = await fetch('/api/user/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const text = await resp.text();
+            msg.textContent = '注册结果：' + text;
+        };
+
+        document.getElementById('btn-login').onclick = async function () {
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+            if (!username || !password) { msg.textContent = '用户名/密码不能为空'; return; }
+            const resp = await fetch('/api/user/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const text = await resp.text();
+            msg.textContent = '登录结果：' + text;
+        };
+    </script>
+</body>
+</html>
