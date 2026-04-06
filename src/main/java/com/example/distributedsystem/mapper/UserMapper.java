@@ -1,35 +1,17 @@
 package com.example.distributedsystem.mapper;
 
 import com.example.distributedsystem.entity.User;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
-import org.springframework.stereotype.Repository;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
+import org.apache.ibatis.annotations.Select;
 
-@Repository
-public class UserMapper {
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
+@Mapper
+public interface UserMapper {
+    @Select("SELECT id, username, password FROM user_account WHERE username = #{username}")
+    User findByUsername(String username);
 
-    private final RowMapper<User> userRowMapper = (rs, rowNum) -> {
-        User u = new User();
-        u.setId(rs.getLong("id"));
-        u.setUsername(rs.getString("username"));
-        u.setPassword(rs.getString("password"));
-        return u;
-    };
-
-    public User findByUsername(String username) {
-        String sql = "SELECT id, username, password FROM user WHERE username = ?";
-        try {
-            return jdbcTemplate.queryForObject(sql, userRowMapper, username);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    public int insert(User user) {
-        String sql = "INSERT INTO user(username, password) VALUES(?, ?)";
-        return jdbcTemplate.update(sql, user.getUsername(), user.getPassword());
-    }
+    @Insert("INSERT INTO user_account(username, password) VALUES(#{username}, #{password})")
+    @Options(useGeneratedKeys = true, keyProperty = "id")
+    int insert(User user);
 }

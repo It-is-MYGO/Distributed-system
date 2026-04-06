@@ -244,6 +244,7 @@
       };
 
       const storageKey = "demo.last_username";
+      const tokenKey = "demo.jwt_token";
       let mode = "login";
       let busy = false;
 
@@ -292,7 +293,7 @@
         return String(text).includes("成功");
       }
 
-      async function postText(url, data, timeoutMs = 8000) {
+      async function postJson(url, data, timeoutMs = 8000) {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
@@ -303,8 +304,16 @@
             signal: ctrl.signal,
           });
           const text = await res.text();
-          if (!res.ok) throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
-          return text;
+          let body = {};
+          try {
+            body = text ? JSON.parse(text) : {};
+          } catch (_) {
+            body = { message: text };
+          }
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${body.message || res.statusText}`);
+          }
+          return body;
         } catch (error) {
           if (error.name === "AbortError") throw new Error("请求超时，请稍后重试");
           throw new Error(error.message || "网络异常，请检查后端服务");
@@ -335,10 +344,21 @@
         setBusy(true);
         showMessage("info", `${action}中，请稍候...`);
         try {
-          const text = await postText(url, { username, password });
+          const body = await postJson(url, { username, password });
           localStorage.setItem(storageKey, username);
-          showMessage(isSuccessText(text) ? "success" : "error", text);
-          if (!isLogin && isSuccessText(text)) {
+          const msg = body.message || "请求成功";
+          const tokenTip = body.token ? `\nJWT: ${body.token}` : "";
+          showMessage(isSuccessText(msg) ? "success" : "error", msg + tokenTip);
+          if (body.token) {
+            localStorage.setItem(tokenKey, body.token);
+          }
+          if (isLogin && body.token) {
+            setTimeout(() => {
+              window.location.href = "/product.html";
+            }, 300);
+            return;
+          }
+          if (!isLogin && isSuccessText(msg)) {
             els.password.value = "";
             setMode("login");
           }
@@ -352,6 +372,10 @@
       // init
       const lastName = localStorage.getItem(storageKey);
       if (lastName) els.username.value = lastName;
+      const existingToken = localStorage.getItem(tokenKey);
+      if (existingToken) {
+        window.location.href = "/product.html";
+      }
       els.apiInfo.textContent = `API：${window.location.origin}`;
       setMode("login");
     </script>

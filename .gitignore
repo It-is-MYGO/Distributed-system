@@ -12,7 +12,19 @@ target/
 
 # Logs
 *.log
+run.log
+build.log
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Local DB files (H2 file mode)
+data/
+*.mv.db
+*.trace.db
+*.lock.db
+
+# JMeter results / reports
+*.jtl
+jmeter/*report/

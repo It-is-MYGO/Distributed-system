@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>商品主页</title>
+    <style>
+      body { font-family: "Microsoft YaHei", Arial, sans-serif; margin: 24px; background: #f5f7fb; color: #1f2937; }
+      .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 6px 18px rgba(0,0,0,0.08); margin-bottom: 16px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      input { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+      button { border: 0; background: #2563eb; color: #fff; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+      button.secondary { background: #6b7280; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th, td { border-bottom: 1px solid #e5e7eb; text-align: left; padding: 10px 8px; }
+      .hint { color: #6b7280; font-size: 13px; }
+      #msg { margin-top: 10px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>商品主页面</h2>
+      <p class="hint">已登录后可查看商品、创建商品并下单。</p>
+      <div class="row">
+        <button id="refreshBtn">刷新商品列表</button>
+        <button id="logoutBtn" class="secondary">退出登录</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>创建商品</h3>
+      <div class="row">
+        <input id="name" placeholder="商品名" />
+        <input id="price" type="number" step="0.01" placeholder="价格" />
+        <input id="stock" type="number" placeholder="库存" />
+        <button id="createBtn">创建</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>商品列表（可下单）</h3>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>名称</th><th>价格</th><th>下单数量</th><th>操作</th></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div id="msg"></div>
+    </div>
+
+    <script>
+      const tokenKey = "demo.jwt_token";
+      const token = localStorage.getItem(tokenKey);
+      const msg = document.getElementById("msg");
+      const tbody = document.getElementById("tbody");
+
+      if (!token) {
+        window.location.href = "/";
+      }
+
+      function setMsg(text) {
+        msg.textContent = text;
+      }
+
+      async function request(url, options = {}) {
+        const headers = Object.assign({}, options.headers || {}, {
+          Authorization: `Bearer ${token}`
+        });
+        const res = await fetch(url, Object.assign({}, options, { headers }));
+        const text = await res.text();
+        let body = {};
+        try { body = text ? JSON.parse(text) : {}; } catch (_) { body = { message: text }; }
+        if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
+        return body;
+      }
+
+      async function loadProducts() {
+        try {
+          const data = await request("/api/product");
+          tbody.innerHTML = "";
+          data.forEach(p => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${p.id}</td>
+              <td>${p.name}</td>
+              <td>${p.price}</td>
+              <td><input id="qty-${p.id}" type="number" min="1" value="1" style="width:80px"/></td>
+              <td><button data-id="${p.id}">下单</button></td>
+            `;
+            tr.querySelector("button").addEventListener("click", () => createOrder(p.id));
+            tbody.appendChild(tr);
+          });
+          setMsg(`已加载 ${data.length} 个商品`);
+        } catch (e) {
+          setMsg(`加载失败：${e.message}`);
+        }
+      }
+
+      async function createOrder(productId) {
+        const qty = Number(document.getElementById(`qty-${productId}`).value || 1);
+        try {
+          const order = await request("/api/order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productId, quantity: qty })
+          });
+          setMsg(`下单成功，订单ID=${order.id}`);
+        } catch (e) {
+          setMsg(`下单失败：${e.message}`);
+        }
+      }
+
+      document.getElementById("refreshBtn").addEventListener("click", loadProducts);
+      document.getElementById("logoutBtn").addEventListener("click", () => {
+        localStorage.removeItem(tokenKey);
+        window.location.href = "/";
+      });
+      document.getElementById("createBtn").addEventListener("click", async () => {
+        const name = document.getElementById("name").value.trim();
+        const price = Number(document.getElementById("price").value);
+        const stock = Number(document.getElementById("stock").value);
+        if (!name || !price || !stock) {
+          setMsg("请填写完整商品信息");
+          return;
+        }
+        try {
+          const p = await request("/api/product", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, price, stock })
+          });
+          setMsg(`创建成功，商品ID=${p.id}`);
+          loadProducts();
+        } catch (e) {
+          setMsg(`创建失败：${e.message}`);
+        }
+      });
+
+      loadProducts();
+    </script>
+  </body>
+</html>

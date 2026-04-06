@@ -1,28 +1,35 @@
 package com.example.distributedsystem.controller;
 
-import com.example.distributedsystem.entity.User;
+import com.example.distributedsystem.dto.AuthRequest;
+import com.example.distributedsystem.dto.AuthResponse;
 import com.example.distributedsystem.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/user")
 public class UserController {
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
 
     @PostMapping("/register")
-    public ResponseEntity<String> register(@RequestBody User user) {
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody AuthRequest user) {
         return ResponseEntity.ok(userService.register(user));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<String> login(@RequestBody Map<String, String> request) {
-        String username = request.get("username");
-        String password = request.get("password");
-        return ResponseEntity.ok(userService.login(username, password));
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
+        return ResponseEntity.ok(userService.login(request));
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> me(Authentication authentication) {
+        String username = authentication.getName();
+        return ResponseEntity.ok(userService.getCurrentUser(username));
     }
 }
