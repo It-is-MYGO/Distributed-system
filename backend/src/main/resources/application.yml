@@ -1,0 +1,42 @@
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/demo;MODE=MYSQL;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  h2:
+    console:
+      enabled: true
+  jackson:
+    serialization:
+      fail-on-empty-beans: false
+  devtools:
+    restart:
+      enabled: true
+    livereload:
+      enabled: true
+  web:
+    resources:
+      static-locations: classpath:/static/,file:./frontend/,file:../frontend/
+
+server:
+  port: 8080
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+app:
+  jwt:
+    secret: "distributed-system-demo-secret-key-distributed-system-demo-secret"
+    expire-hours: 24
+  worker-id: 1
+  nacos:
+    server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+  kafka:
+    seckill-topic: seckill-orders

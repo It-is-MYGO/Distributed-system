@@ -1,0 +1,293 @@
+数据库设计说明书
+<table> <tr><td colspan="5"><b>案卷号</b>（请根据公司/项目规定填写）</td></tr> <tr><td colspan="5"><b>日期</b> 2026-05-01</td></tr> </table>
+＜summer-training-backend2 动态模块数据库＞
+
+数据库设计说明书
+
+<table> <tr><td><b>作 者：</b>（请填写你的名字）</td></tr> <tr><td><b>完成日期：</b> 2026-05-01</td></tr> <tr><td><b>签 收 人：</b>（由评审人或负责人填写）</td></tr> <tr><td><b>签收日期：</b>（由签收人填写）</td></tr> </table>
+修改情况记录：
+
+<table> <tr><th>版本号</th><th>修改批准人</th><th>修改人</th><th>安装日期</th><th>签收人</th></tr> <tr><td>V1.0</td><td></td><td>（你）</td><td>2026-05-01</td><td></td></tr> <tr><td>V2.0</td><td></td><td>（你）</td><td>2026-05-01</td><td>（补充完整数据库设计）</td></tr> </table>
+目录
+
+1 引言
+
+1.1 编写目的
+
+1.2 背景
+
+1.3 定义
+
+1.4 参考资料
+
+2 外部设计
+
+2.1 标识符和状态
+
+2.2 使用它的程序
+
+2.3 约定
+
+2.4 专门指导
+
+2.5 支持软件
+
+3 结构设计
+
+3.1 概念结构设计
+
+3.2 逻辑结构设计
+
+3.3 物理结构设计
+
+4 运用设计
+
+4.1 数据字典设计
+
+4.2 安全保密设计
+
+1 引言
+1.1 编写目的
+本文档旨在全面、准确地定义 summer-training-backend2 项目后端数据库的设计与结构。它详细描述了数据库的标识信息、外部依赖、概念/逻辑/物理模型、完整的数据字典、存储过程与触发器行为定义，以及安全保密策略。本文档为项目的开发、测试、部署和后续维护人员提供统一、权威的技术依据。
+
+预期的读者包括：系统架构师、后端开发工程师、前端开发工程师、测试工程师、数据库管理员（DBA）及系统运维人员。
+
+1.2 背景
+a. 待开发的数据库名称：priceCompare
+使用此数据库的软件系统名称：“summer-training-backend2” 后端API服务器
+
+b. 项目各方信息：
+
+任务提出者：（请根据项目实际情况填写，例如：实训项目导师/产品经理）
+
+开发者：It-is-MYGO, HannnnnnWW, woyaofangjia
+
+用户：客户端前端应用（用户管理、商品管理、动态管理、价格分析等模块）及广大终端用户
+
+安装单位：（请根据项目实际情况填写，如：实训小组或项目组）
+
+1.3 定义
+本文件中用到的专门术语和缩写词：
+
+<table> <tr><th>术语/缩写</th><th>定义</th></tr> <tr><td>API</td><td>应用程序接口 (Application Programming Interface)</td></tr> <tr><td>JSON</td><td>JavaScript 对象表示法 (JavaScript Object Notation)</td></tr> <tr><td>MySQL</td><td>本项目使用的关系型数据库管理系统</td></tr> <tr><td>Node.js</td><td>本项目使用的服务器端 JavaScript 运行环境</td></tr> <tr><td>Express.js</td><td>Node.js 的轻量级 Web 开发框架</td></tr> <tr><td>Multer</td><td>用于处理文件上传的 Node.js 中间件</td></tr> <tr><td>ENUM</td><td>数据库枚举类型，用于限定字段的取值范围</td></tr> <tr><td>外键 (Foreign Key)</td><td>用于建立和加强两个表数据之间链接的一列或多列</td></tr> <tr><td>级联删除 (CASCADE DELETE)</td><td>当主表中的记录被删除时，自动删除子表中的相关记录</td></tr> </table>
+1.4 参考资料
+a. 项目后端代码库：https://github.com/It-is-MYGO/summer-training-backend2
+b. 项目根目录下的 README.md 文档
+c. 《数据库设计说明书编写规范》（即本文档模板）
+d. 项目数据库详细设计文档（即你提供的图文资料）
+e. MySQL 官方文档
+
+2 外部设计
+2.1 标识符和状态
+数据库标识符：priceCompare
+
+描述性信息：这是为“summer-training-backend2”多平台比价与动态分享系统设计的核心数据库。它不仅存储用户发布的动态、评论、点赞、收藏等社交数据，还管理商品信息、多平台价格对比和历史价格追踪。
+
+状态：当前处于开发测试阶段，功能正在快速迭代中。
+
+2.2 使用它的程序
+以下是当前将要使用或访问此数据库的所有应用程序：
+
+<table> <tr><th>应用程序名称</th><th>版本号</th><th>主要功能描述</th></tr> <tr><td>summer-training-backend2 API服务器</td><td>1.0.0</td><td>处理所有前端请求，执行业务逻辑，与 priceCompare 数据库进行交互以存取数据</td></tr> </table>
+2.3 约定
+数据库版本标识约定：采用 major.minor.patch 格式，通过代码仓库中的 SQL 迁移脚本和 config/database.js 进行版本管理。
+
+命名约定：
+
+表名：使用小写字母和下划线，采用复数形式表示集合（如 admins, products, posts, comments）。
+
+字段名：采用下划线分隔的小写字母（snake_case），如 user_id, created_at, product_id。
+
+主键：统一命名为 id。
+
+外键：命名为 <关联表名单数>_id，如 user_id, post_id, product_id。
+
+索引：主键索引默认 PRIMARY，普通索引命名为 idx_<字段名>，唯一索引命名为 unq_<字段名>。
+
+存储过程：以 sp_ 为前缀。
+
+触发器：以 trg_ 为前缀。
+
+2.4 专门指导
+数据格式与标准：所有与API交互的数据，均采用 JSON 格式。日期时间字段在数据库中统一使用 DATETIME 或 TIMESTAMP 类型存储，在API层面转换为 ISO 8601 格式的字符串。
+
+操作规程和步骤：
+
+环境准备：确保已安装 Node.js 和 MySQL。
+安装依赖：进入项目根目录，运行 npm install。
+数据库配置：修改 config/database.js 文件，填写正确的数据库主机地址、端口、用户名、密码和数据库名称 priceCompare。
+数据库初始化：运行 node database/init.js，该脚本将根据 database.sql 或后续的迁移脚本自动创建表结构并插入必要的初始数据。
+启动服务：运行 npm start，启动后端 API 服务器。
+操作指导：更详细的使用说明请参考项目根目录下的 README.md 文件。
+
+2.5 支持软件
+<table> <tr><th>软件类型</th><th>名称与版本</th><th>主要功能与技术特性</th></tr> <tr><td><b>数据库管理系统</b></td><td><b>MySQL</b> (社区版)</td><td>关系型数据库，支持事务（ACID）、行级锁、外键约束，使用 InnoDB 存储引擎</td></tr> <tr><td><b>服务端运行时</b></td><td><b>Node.js</b></td><td>提供高性能、事件驱动的后端API运行环境</td></tr> <tr><td><b>Web开发框架</b></td><td><b>Express.js</b></td><td>提供路由、中间件等机制，构建 RESTful API</td></tr> <tr><td><b>文件上传中间件</b></td><td><b>Multer</b></td><td>解析 multipart/form-data 请求，处理文件上传</td></tr> <tr><td><b>MySQL驱动</b></td><td><b>mysql2</b></td><td>使 Node.js 应用能高效连接并操作 MySQL 数据库，支持 Promise API 和连接池</td></tr> </table>
+3 结构设计
+3.1 概念结构设计
+本数据库反映了“多平台商品比价与动态分享”系统的核心业务模型。主要实体及其关系如下（E-R模型）：
+
+实体：管理员 (Admin)
+
+属性：ID、用户名、加密密码、头像、角色、状态、登录时间等。
+
+实体：用户 (User)
+
+属性：ID、用户名、加密密码、头像、邮箱、注册时间等。
+
+实体：商品 (Product)
+
+属性：商品编号(ID)、名称、描述、当前参考价格、主图、分类、状态等。
+
+实体：动态 (Post)
+
+属性：动态ID、内容、图片、用户ID、点赞数、评论数等。
+
+实体：平台 (Platform/Product_Platform)
+
+属性：关联ID、平台名、平台价格、购买链接等。
+
+实体：价格历史 (Price_History)
+
+属性：记录ID、商品ID、平台、当时价格、记录时间。
+
+实体：评论 (Comment)
+
+属性：评论ID、动态ID、用户ID、内容、评论时间。
+
+实体：点赞 (Like)
+
+属性：点赞ID、动态ID、用户ID、点赞时间。
+
+实体：收藏 (Collection)
+
+属性：收藏ID、动态ID、用户ID、收藏时间。
+
+实体间的主要关系：
+
+<table> <tr><th>关系</th><th>类型</th><th>说明</th></tr> <tr><td>用户 — 动态</td><td>一对多</td><td>一个用户可发布多条动态，一条动态只属于一个用户</td></tr> <tr><td>动态 — 评论</td><td>一对多</td><td>一条动态可有多个评论，一个评论只关联一条动态。<b>存在级联删除关系：删除动态将自动删除其所有评论</b></td></tr> <tr><td>用户 — 评论/点赞/收藏</td><td>一对多</td><td>一个用户可发表多条评论/点赞/收藏</td></tr> <tr><td>商品 — 商品平台关联</td><td>一对多</td><td>一个商品可在多个平台销售，形成比价。<b>存在级联删除关系：删除商品将自动删除其所有平台关联信息</b></td></tr> <tr><td>商品平台关联 — 价格历史</td><td>一对多</td><td>一个平台上的商品可有多条历史价格记录</td></tr> </table>
+3.2 逻辑结构设计
+数据库管理员的全局逻辑视图如下。该设计已通过外键明确表间关系，并通过冗余字段（如动态表中的 like_count）提高查询效率。
+
+<table> <tr><th>表名</th><th>主键（关键字）</th><th>核心属性（外键标*）</th><th>记录结构说明</th></tr> <tr><td><b>admins</b></td><td><code>id</code> (BIGINT)</td><td><code>username</code>, <code>password</code>, <code>role</code>, <code>status</code></td><td>存储系统管理员信息，用户名唯一且非空</td></tr> <tr><td><b>users</b></td><td><code>id</code> (INT/UUID)</td><td><code>username</code>, <code>password</code>, <code>email</code></td><td>存储前端注册用户信息，是社交功能的中心</td></tr> <tr><td><b>products</b></td><td><code>id</code> (VARCHAR)</td><td><code>name</code>, <code>category</code>, <code>status</code>, <code>price</code></td><td>核心商品信息表，ID采用自定义编号。包含全文索引优化搜索</td></tr> <tr><td><b>product_platforms</b></td><td><code>id</code> (BIGINT)</td><td>*<code>product_id</code>, <code>platform</code>, <code>platform_price</code></td><td>关联商品与其在各平台的详细信息。外键关联至 <code>products.id</code></td></tr> <tr><td><b>price_histories</b></td><td><code>id</code> (BIGINT)</td><td>*<code>product_id</code>, <code>platform</code>, <code>price</code>, <code>recorded_at</code></td><td>追踪每个平台商品的历史价格，用于生成趋势图</td></tr> <tr><td><b>posts</b></td><td><code>id</code> (BIGINT)</td><td>*<code>user_id</code>, <code>content</code>, <code>like_count</code></td><td>用户发布的动态内容。<code>like_count</code> 为冗余字段，由触发器自动维护</td></tr> <tr><td><b>comments</b></td><td><code>id</code> (BIGINT)</td><td>*<code>post_id</code>, *<code>user_id</code>, <code>content</code></td><td>对动态的评论。外键关联至 <code>posts.id</code>，并设置级联删除</td></tr> <tr><td><b>likes</b></td><td><code>id</code> (INT/UUID)</td><td>*<code>post_id</code>, *<code>user_id</code></td><td>记录用户对动态的点赞关系</td></tr> <tr><td><b>collections</b></td><td><code>id</code> (INT/UUID)</td><td>*<code>post_id</code>, *<code>user_id</code></td><td>记录用户对动态的收藏关系</td></tr> </table>
+3.3 物理结构设计
+本部分从系统程序员视角描述物理实现方案。
+
+a. 数据在内存中的安排：
+
+索引区加速：为所有表的主键（id）和外键（user_id, post_id, product_id）创建 B+ Tree 索引以加速表连接。为高频查询的字段如 products.category, products.status, posts.created_at, price_histories 的 (product_id, platform) 复合字段建立了专用索引。对 products 表的 name 和 description 字段建立 FULLTEXT 全文索引以支持高效的商品搜索。
+
+连接池缓冲：通过 mysql2/promise 模块创建连接池，connectionLimit 建议设置为 10，复用数据库连接，减少 TCP 三次握手开销。
+
+b. 外存空间的组织：
+
+存储引擎：全部表统一采用 InnoDB 引擎，支持事务（用于存储过程）、外键约束和行级锁。
+
+存储方式：每张表及其索引存储在一个独立的 *.ibd 表空间文件中。数据和索引由 MySQL 的 InnoDB 引擎自动管理其页（Page）和区（Extent）的分配。
+
+c. 访问数据的方式方法：
+
+参数化查询：后端执行参数化 SQL 语句（如 SELECT * FROM products WHERE id = ?）以彻底防止 SQL 注入。
+
+分页查询：对动态列表等长列表数据，统一采用 LIMIT 和 OFFSET 进行物理分页，确保接口性能。
+
+事务管理：在复杂业务逻辑（如发布动态并更新相关统计）或调用存储过程时，启用数据库事务以保证数据一致性。
+
+4 运用设计
+4.1 数据字典设计
+本系统的数据字典由详尽的表结构定义和代码中的 SQL 迁移文件共同构成。以下列出核心表的完整数据字典。
+
+4.1.1 管理员表 (admins)
+
+<table> <tr><th>字段名</th><th>类型</th><th>长度</th><th>允许空</th><th>主键</th><th>默认值</th><th>说明</th></tr> <tr><td><code>id</code></td><td>BIGINT</td><td>20</td><td>否</td><td>是</td><td>自增</td><td>管理员ID</td></tr> <tr><td><code>username</code></td><td>VARCHAR</td><td>50</td><td>否</td><td></td><td>-</td><td>登录账号（唯一索引）</td></tr> <tr><td><code>password</code></td><td>VARCHAR</td><td>100</td><td>否</td><td></td><td>-</td><td>加密密码</td></tr> <tr><td><code>avatar</code></td><td>VARCHAR</td><td>255</td><td>是</td><td></td><td>NULL</td><td>头像URL</td></tr> <tr><td><code>role</code></td><td>ENUM</td><td>-</td><td>否</td><td></td><td>'admin'</td><td>角色类型</td></tr> <tr><td><code>status</code></td><td>TINYINT</td><td>1</td><td>否</td><td></td><td>1</td><td>状态(0-禁用,1-启用)</td></tr> <tr><td><code>last_login</code></td><td>DATETIME</td><td>-</td><td>是</td><td></td><td>NULL</td><td>最后登录时间</td></tr> <tr><td><code>created_at</code></td><td>TIMESTAMP</td><td>-</td><td>否</td><td></td><td>CURRENT_TIMESTAMP</td><td>创建时间</td></tr> <tr><td><code>updated_at</code></td><td>TIMESTAMP</td><td>-</td><td>否</td><td></td><td>CURRENT_TIMESTAMP ON UPDATE</td><td>更新时间</td></tr> </table>
+索引说明：
+
+<table> <tr><th>索引类型</th><th>索引名</th><th>字段</th></tr> <tr><td>UNIQUE INDEX</td><td><code>idx_username</code></td><td><code>username</code></td></tr> <tr><td>INDEX</td><td><code>idx_status</code></td><td><code>status</code></td></tr> </table>
+4.1.2 商品表 (products)
+
+<table> <tr><th>字段名</th><th>类型</th><th>长度</th><th>允许空</th><th>主键</th><th>默认值</th><th>说明</th></tr> <tr><td><code>id</code></td><td>VARCHAR</td><td>20</td><td>否</td><td>是</td><td>-</td><td>商品编号(如P2001)</td></tr> <tr><td><code>name</code></td><td>VARCHAR</td><td>100</td><td>否</td><td></td><td>-</td><td>商品名称</td></tr> <tr><td><code>description</code></td><td>TEXT</td><td>-</td><td>是</td><td></td><td>NULL</td><td>商品描述</td></tr> <tr><td><code>price</code></td><td>DECIMAL</td><td>10,2</td><td>否</td><td></td><td>0.00</td><td>当前参考价格</td></tr> <tr><td><code>image_url</code></td><td>VARCHAR</td><td>255</td><td>是</td><td></td><td>NULL</td><td>主图URL</td></tr> <tr><td><code>category</code></td><td>ENUM</td><td>-</td><td>否</td><td></td><td>'phone'</td><td>分类(phone/computer/etc)</td></tr> <tr><td><code>status</code></td><td>ENUM</td><td>-</td><td>否</td><td></td><td>'active'</td><td>状态(active/banned)</td></tr> <tr><td><code>watch_count</code></td><td>INT</td><td>11</td><td>否</td><td></td><td>0</td><td>监控次数</td></tr> <tr><td><code>created_at</code></td><td>DATETIME</td><td>-</td><td>否</td><td></td><td>-</td><td>创建时间</td></tr> <tr><td><code>updated_at</code></td><td>DATETIME</td><td>-</td><td>否</td><td></td><td>-</td><td>最后更新时间</td></tr> </table>
+索引说明：
+
+<table> <tr><th>索引类型</th><th>索引名</th><th>字段</th></tr> <tr><td>INDEX</td><td><code>idx_category</code></td><td><code>category</code></td></tr> <tr><td>INDEX</td><td><code>idx_status</code></td><td><code>status</code></td></tr> <tr><td>FULLTEXT INDEX</td><td><code>ft_name_desc</code></td><td><code>name</code>, <code>description</code></td></tr> </table>
+4.1.3 商品平台关联表 (product_platforms)
+
+<table> <tr><th>字段名</th><th>类型</th><th>长度</th><th>允许空</th><th>主键</th><th>默认值</th><th>说明</th></tr> <tr><td><code>id</code></td><td>BIGINT</td><td>20</td><td>否</td><td>是</td><td>自增</td><td>关联ID</td></tr> <tr><td><code>product_id</code></td><td>VARCHAR</td><td>20</td><td>否</td><td>外键</td><td>-</td><td>商品ID (CASCADE)</td></tr> <tr><td><code>platform</code></td><td>ENUM</td><td>-</td><td>否</td><td></td><td>-</td><td>平台(jd/tmall/pdd/suning)</td></tr> <tr><td><code>platform_price</code></td><td>DECIMAL</td><td>10,2</td><td>否</td><td></td><td>-</td><td>平台当前价</td></tr> <tr><td><code>platform_url</code></td><td>VARCHAR</td><td>255</td><td>是</td><td></td><td>NULL</td><td>商品链接</td></tr> <tr><td><code>price_history</code></td><td>JSON</td><td>-</td><td>是</td><td></td><td>NULL</td><td>价格历史记录(JSON)</td></tr> <tr><td><code>updated_at</code></td><td>DATETIME</td><td>-</td><td>否</td><td></td><td>-</td><td>最后抓取时间</td></tr> </table>
+外键约束：
+
+<table> <tr><th>约束名</th><th>外键字段</th><th>引用表</th><th>引用字段</th><th>删除规则</th></tr> <tr><td><code>fk_product</code></td><td><code>product_id</code></td><td><code>products</code></td><td><code>id</code></td><td>CASCADE</td></tr> </table>
+4.1.4 用户动态表 (posts)
+
+<table> <tr><th>字段名</th><th>类型</th><th>长度</th><th>允许空</th><th>主键</th><th>默认值</th><th>说明</th></tr> <tr><td><code>id</code></td><td>BIGINT</td><td>20</td><td>否</td><td>是</td><td>自增</td><td>动态ID</td></tr> <tr><td><code>user_id</code></td><td>BIGINT</td><td>20</td><td>否</td><td></td><td>-</td><td>发布用户ID</td></tr> <tr><td><code>content</code></td><td>TEXT</td><td>-</td><td>否</td><td></td><td>-</td><td>动态内容</td></tr> <tr><td><code>image_url</code></td><td>VARCHAR</td><td>255</td><td>是</td><td></td><td>NULL</td><td>图片URL</td></tr> <tr><td><code>like_count</code></td><td>INT</td><td>11</td><td>否</td><td></td><td>0</td><td>点赞数（触发器维护）</td></tr> <tr><td><code>comment_count</code></td><td>INT</td><td>11</td><td>否</td><td></td><td>0</td><td>评论数（触发器维护）</td></tr> <tr><td><code>share_count</code></td><td>INT</td><td>11</td><td>否</td><td></td><td>0</td><td>分享数</td></tr> <tr><td><code>created_at</code></td><td>DATETIME</td><td>-</td><td>否</td><td></td><td>-</td><td>发布时间</td></tr> <tr><td><code>updated_at</code></td><td>DATETIME</td><td>-</td><td>否</td><td></td><td>-</td><td>最后编辑时间</td></tr> </table>
+索引说明：
+
+<table> <tr><th>索引类型</th><th>索引名</th><th>字段</th></tr> <tr><td>INDEX</td><td><code>idx_user</code></td><td><code>user_id</code></td></tr> <tr><td>INDEX</td><td><code>idx_created</code></td><td><code>created_at</code> DESC</td></tr> </table>
+4.1.5 评论表 (comments)
+
+<table> <tr><th>字段名</th><th>类型</th><th>长度</th><th>允许空</th><th>主键</th><th>默认值</th><th>说明</th></tr> <tr><td><code>id</code></td><td>BIGINT</td><td>20</td><td>否</td><td>是</td><td>自增</td><td>评论ID</td></tr> <tr><td><code>post_id</code></td><td>BIGINT</td><td>20</td><td>否</td><td>外键</td><td>-</td><td>关联动态ID (CASCADE)</td></tr> <tr><td><code>user_id</code></td><td>BIGINT</td><td>20</td><td>否</td><td></td><td>-</td><td>评论用户ID</td></tr> <tr><td><code>content</code></td><td>VARCHAR</td><td>2000</td><td>否</td><td></td><td>-</td><td>评论内容</td></tr> <tr><td><code>created_at</code></td><td>DATETIME</td><td>-</td><td>否</td><td></td><td>-</td><td>评论时间</td></tr> </table>
+外键约束：
+
+<table> <tr><th>约束名</th><th>外键字段</th><th>引用表</th><th>引用字段</th><th>删除规则</th></tr> <tr><td><code>fk_post</code></td><td><code>post_id</code></td><td><code>posts</code></td><td><code>id</code></td><td>CASCADE</td></tr> </table>
+4.1.6 价格历史表 (price_histories)
+
+<table> <tr><th>字段名</th><th>类型</th><th>长度</th><th>允许空</th><th>主键</th><th>默认值</th><th>说明</th></tr> <tr><td><code>id</code></td><td>BIGINT</td><td>20</td><td>否</td><td>是</td><td>自增</td><td>记录ID</td></tr> <tr><td><code>product_id</code></td><td>VARCHAR</td><td>20</td><td>否</td><td></td><td>-</td><td>商品ID</td></tr> <tr><td><code>platform</code></td><td>ENUM</td><td>-</td><td>否</td><td></td><td>-</td><td>平台类型</td></tr> <tr><td><code>price</code></td><td>DECIMAL</td><td>10,2</td><td>否</td><td></td><td>-</td><td>记录价格</td></tr> <tr><td><code>created_at</code></td><td>DATETIME</td><td>-</td><td>否</td><td></td><td>-</td><td>记录时间</td></tr> </table>
+索引说明：
+
+<table> <tr><th>索引类型</th><th>索引名</th><th>字段</th></tr> <tr><td>INDEX</td><td><code>idx_product_platform</code></td><td><code>product_id</code>, <code>platform</code></td></tr> <tr><td>INDEX</td><td><code>idx_created</code></td><td><code>created_at</code></td></tr> </table>
+4.1.7 其他表
+
+用户表 (users)
+
+<table> <tr><th>字段名</th><th>类型</th><th>说明</th></tr> <tr><td><code>id</code></td><td>INT/UUID</td><td>主键</td></tr> <tr><td><code>username</code></td><td>VARCHAR</td><td>用户名</td></tr> <tr><td><code>password</code></td><td>VARCHAR</td><td>密码（加密）</td></tr> <tr><td><code>avatar</code></td><td>VARCHAR</td><td>头像URL</td></tr> <tr><td><code>email</code></td><td>VARCHAR</td><td>邮箱</td></tr> <tr><td><code>created_at</code></td><td>DATETIME</td><td>注册时间</td></tr> </table>
+点赞表 (likes)
+
+<table> <tr><th>字段名</th><th>类型</th><th>说明</th></tr> <tr><td><code>id</code></td><td>INT/UUID</td><td>主键</td></tr> <tr><td><code>post_id</code></td><td>INT/UUID</td><td>动态ID</td></tr> <tr><td><code>user_id</code></td><td>INT/UUID</td><td>用户ID</td></tr> <tr><td><code>created_at</code></td><td>DATETIME</td><td>点赞时间</td></tr> </table>
+收藏表 (collections)
+
+<table> <tr><th>字段名</th><th>类型</th><th>说明</th></tr> <tr><td><code>id</code></td><td>INT/UUID</td><td>主键</td></tr> <tr><td><code>post_id</code></td><td>INT/UUID</td><td>动态ID</td></tr> <tr><td><code>user_id</code></td><td>INT/UUID</td><td>用户ID</td></tr> <tr><td><code>created_at</code></td><td>DATETIME</td><td>收藏时间</td></tr> </table>
+5.1 实体定义补充说明
+
+一、设计思路及约束规则
+
+<table> <tr><th>序号</th><th>设计原则</th><th>说明</th></tr> <tr><td>1</td><td>核心实体分离</td><td>商品基础信息与平台价格数据分离（product/product_platform），支持多平台比价</td></tr> <tr><td>2</td><td>历史数据追踪</td><td>价格历史独立存储（price_history），支持价格波动分析</td></tr> <tr><td>3</td><td>用户交互体系</td><td>动态（post）与评论（comment）解耦，支持扩展互动功能</td></tr> <tr><td>4</td><td>枚举约束</td><td>关键字段（平台类型/商品状态等）使用ENUM确保数据一致性</td></tr> <tr><td>5</td><td>级联删除</td><td>关联数据（如商品-平台）通过外键实现自动清理</td></tr> <tr><td>6</td><td>索引优化</td><td>针对高频查询字段（状态/分类/时间）建立专用索引</td></tr> </table>
+二、内部依赖性描述
+
+<table> <tr><th>依赖类型</th><th>依赖关系</th></tr> <tr><td>实体间依赖</td><td>comment 依赖 post，product_platform 依赖 product</td></tr> <tr><td>外键约束</td><td>product_platform.product_id → products.id，comment.post_id → posts.id</td></tr> <tr><td>触发器依赖</td><td>评论/点赞触发器依赖 post 表更新 like_count 和 comment_count</td></tr> </table>
+5.2 行为定义
+
+一、核心存储过程
+
+<table> <tr><th>存储过程名称</th><th>功能</th><th>参数</th><th>事务</th></tr> <tr><td><code>sp_update_product_status</code></td><td>批量更新商品状态</td><td>@product_ids VARCHAR(MAX), @status TINYINT</td><td>启用</td></tr> <tr><td><code>sp_get_post_with_comments</code></td><td>获取动态及关联评论</td><td>@post_id BIGINT</td><td>返回：动态详情记录集 + 评论记录集</td></tr> </table>
+二、关键触发器
+
+<table> <tr><th>触发器名称</th><th>触发时机</th><th>动作</th></tr> <tr><td><code>trg_after_comment_insert</code></td><td>评论表INSERT后</td><td>更新post表的comment_count字段</td></tr> <tr><td><code>trg_before_product_delete</code></td><td>商品表DELETE前</td><td>级联删除product_platform关联记录</td></tr> </table>
+三、外部依赖性描述
+
+<table> <tr><th>依赖对象</th><th>依赖内容</th></tr> <tr><td>前端业务模块</td><td>用户管理、商品管理、动态管理、价格分析等通过 API 调用后端接口，间接依赖后端的存储过程/触发器实现数据的增删改查、统计与分析</td></tr> <tr><td>后端接口</td><td>前端需依赖后端接口的稳定性和一致性，接口变更需同步前端适配</td></tr> <tr><td>AI/大模型服务</td><td>前端部分功能（如价格趋势图、推荐系统）依赖 AI/大模型服务的接口返回结果</td></tr> </table>
+四、内部依赖性描述
+
+<table> <tr><th>序号</th><th>依赖描述</th></tr> <tr><td>1</td><td>存储过程间存在调用关系，如用户删除存储过程会调用动态、评论的删除过程</td></tr> <tr><td>2</td><td>存储过程与数据表/视图紧密耦合，如商品价格变动存储过程依赖于products和price_history表</td></tr> <tr><td>3</td><td>触发器常用于保证数据一致性，如商品删除时自动级联删除相关历史记录</td></tr> <tr><td>4</td><td>某些统计与推荐存储过程需启用事务，确保数据一致性和原子性</td></tr> </table>
+4.2 安全保密设计
+数据库设计通过多层机制确保数据安全，具体策略如下：
+
+访问者区分与认证：
+
+区分管理员与普通用户：通过 admins 表和 users 表物理隔离两类账户，其认证逻辑在 API 层有不同的处理。
+
+基于 user_id 的权限控制：对于动态、评论等用户生成内容，API 服务器在执行编辑（UPDATE）和删除（DELETE）操作前，必须验证请求中的 user_id 与数据库中记录的 user_id 是否一致，或请求者是否为管理员。这是应用层的安全保证。
+
+访问类型和数据对象分别对待：
+
+写操作保护：所有创建、更新、删除接口均需验证用户身份。
+
+读操作区分：虽然商品和公开动态默认对所有登录用户可见，但未来可通过 status 字段（如 banned, private）在查询逻辑中过滤数据，实现敏感信息隐藏。
+
+数据完整性保护：通过外键约束和级联删除（CASCADE DELETE） 策略，确保在删除商品或动态时，其关联的平台信息、评论等数据被自动、完整地清理，避免产生“孤儿数据”，从而保证数据结构的整体安全。
+
+数据库层面的防护：
+
+防注入攻击：所有数据库查询均在后端使用预编译参数化语句，从根本上杜绝 SQL 注入的可能性。
+
+敏感数据加密：admins 和 users 表中的 password 字段，在应用程序内部经过哈希算法（如 bcrypt）处理后再入库。数据库中永不存储明文密码。
+
+安全保密设计总览：
+
+<table> <tr><th>安全层面</th><th>策略</th><th>实现方式</th></tr> <tr><td>访问控制</td><td>区分访问者身份</td><td>admins 与 users 表物理隔离，API层分别认证</td></tr> <tr><td>权限验证</td><td>基于 user_id 的操作控制</td><td>API层验证 user_id 一致性或管理员身份</td></tr> <tr><td>数据过滤</td><td>读写分离与状态过滤</td><td>通过 status 字段在查询时过滤数据</td></tr> <tr><td>数据完整性</td><td>外键与级联删除</td><td>数据库层 CASCADE DELETE 约束</td></tr> <tr><td>防注入</td><td>参数化查询</td><td>预编译 SQL 语句</td></tr> <tr><td>密码安全</td><td>哈希加密存储</td><td>bcrypt 等算法处理后再入库</td></tr> </table>

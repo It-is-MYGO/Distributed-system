@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 收银台</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="orders">
+<header class="site-header" id="siteHeader"></header>
+<main class="page cashier-page">
+    <section class="cashier-shell">
+        <div class="panel-body" id="cashierBody"></div>
+    </section>
+</main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, $$, apiRequest, formatMoney, formatDate, mapStatus, escapeHtml, requireLogin, loading, emptyState, renderHeader, toast } = AppCommon;
+    const PAY_METHODS = [
+        { code: "BANK", icon: "银", title: "银行卡", desc: "储蓄卡 / 信用卡支付" },
+        { code: "WECHAT", icon: "微", title: "微信支付", desc: "使用微信扫码或确认支付" },
+        { code: "ALIPAY", icon: "支", title: "支付宝", desc: "使用支付宝扫码或确认支付" },
+        { code: "LATER", icon: "享", title: "先付后享", desc: "先确认订单，体验后再付款" }
+    ];
+    let order = null;
+    let selectedMethod = "BANK";
+    let timer = null;
+
+    function query() {
+        const params = new URLSearchParams(location.search);
+        return { orderId: params.get("orderId") || "" };
+    }
+
+    function expireAt(order) {
+        const created = new Date(order.createdAt).getTime();
+        return Number.isNaN(created) ? 0 : created + 15 * 60 * 1000;
+    }
+
+    function leftText(order) {
+        const left = Math.max(0, expireAt(order) - Date.now());
+        const minutes = Math.floor(left / 60000);
+        const seconds = Math.floor((left % 60000) / 1000);
+        return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    function renderCashier() {
+        const isPayable = order.status === "CREATED" && expireAt(order) > Date.now();
+        $("#cashierBody").innerHTML = `
+            <div class="section-head">
+                <div>
+                    <p class="eyebrow" style="color:var(--brand);">${escapeHtml(mapStatus(order.status))}</p>
+                    <h2>${isPayable ? "选择支付方式" : "订单不可支付"}</h2>
+                    <p>${isPayable ? `请在 15 分钟内完成支付，剩余 <strong id="payCountdown">${leftText(order)}</strong>` : "订单已支付或已超过支付时限，可返回订单查看状态。"}</p>
+                </div>
+                <strong class="money">${formatMoney(order.totalAmount)}</strong>
+            </div>
+            <div class="summary-row"><span>订单号</span><strong>${escapeHtml(order.orderNo || "-")}</strong></div>
+            <div class="summary-row"><span>创建时间</span><strong>${formatDate(order.createdAt)}</strong></div>
+            <div class="pay-method-grid">
+                ${PAY_METHODS.map(method => `
+                    <button class="pay-method ${selectedMethod === method.code ? "active" : ""}" type="button" data-method="${method.code}" ${isPayable ? "" : "disabled"}>
+                        <i>${method.icon}</i>
+                        <strong>${method.title}</strong>
+                        <span>${method.desc}</span>
+                    </button>
+                `).join("")}
+            </div>
+            <div class="green-coupon">退出收银台或支付失败时，订单会暂存在“我的订单”中；15 分钟内可以继续支付或更改支付方式。</div>
+            <div class="toolbar cashier-actions" style="margin-top:22px;">
+                ${isPayable ? `<button class="btn primary" id="payNowBtn">立即支付</button>` : ""}
+                <a class="btn" href="/order-detail.html?orderId=${order.id}">返回订单</a>
+            </div>
+        `;
+        $$(".pay-method").forEach(button => {
+            button.addEventListener("click", () => {
+                selectedMethod = button.dataset.method;
+                renderCashier();
+            });
+        });
+        $("#payNowBtn")?.addEventListener("click", payNow);
+        startCountdown();
+    }
+
+    function startCountdown() {
+        if (timer) clearInterval(timer);
+        timer = setInterval(async () => {
+            const node = $("#payCountdown");
+            if (!node || order.status !== "CREATED") {
+                clearInterval(timer);
+                return;
+            }
+            node.textContent = leftText(order);
+            if (expireAt(order) <= Date.now()) {
+                clearInterval(timer);
+                try {
+                    order = await apiRequest(`/order/${order.id}`);
+                } catch {}
+                renderCashier();
+            }
+        }, 1000);
+    }
+
+    async function payNow() {
+        const method = PAY_METHODS.find(item => item.code === selectedMethod);
+        try {
+            $("#payNowBtn").disabled = true;
+            $("#payNowBtn").textContent = `${method.title}处理中...`;
+            order = await apiRequest(`/order/${order.id}/pay`, {
+                method: "POST",
+                body: JSON.stringify({ payMethod: selectedMethod })
+            });
+            toast("支付成功，正在返回订单", "success");
+            setTimeout(() => location.href = `/order-detail.html?orderId=${order.id}`, 700);
+        } catch (error) {
+            toast(`支付失败：${error.message}`, "error");
+            $("#payNowBtn").disabled = false;
+            $("#payNowBtn").textContent = "立即支付";
+        }
+    }
+
+    async function init() {
+        if (!requireLogin()) return;
+        await renderHeader("orders");
+        const data = query();
+        if (!data.orderId) {
+            $("#cashierBody").innerHTML = emptyState("缺少订单 ID", "请从订单列表进入支付。");
+            return;
+        }
+        $("#cashierBody").innerHTML = loading("正在读取订单...");
+        try {
+            order = await apiRequest(`/order/${data.orderId}`);
+            renderCashier();
+        } catch (error) {
+            $("#cashierBody").innerHTML = emptyState("支付页加载失败", error.message);
+        }
+    }
+
+    init();
+</script>
+</body>
+</html>

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>秒杀系统 - 商品管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: white;
+            border-radius: 20px;
+            padding: 16px 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .logo h2 {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            font-size: 24px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .user-info span {
+            color: #666;
+        }
+
+        .btn-logout {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-logout:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .card-header h3 {
+            font-size: 20px;
+            color: #333;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #555;
+        }
+
+        .form-control {
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            outline: none;
+            font-family: inherit;
+        }
+
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        .product-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .product-table thead {
+            background: #f8f9fa;
+        }
+
+        .product-table th {
+            padding: 16px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #555;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .product-table td {
+            padding: 16px 12px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #333;
+        }
+
+        .product-table tr:hover {
+            background: #fafafa;
+        }
+
+        .quantity-input {
+            width: 80px;
+            padding: 8px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .quantity-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn-order {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 8px 20px;
+        }
+
+        .btn-order:hover {
+            box-shadow: 0 6px 16px rgba(245, 158, 11, 0.3);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: white;
+            border-radius: 12px;
+            padding: 14px 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+            border-left: 4px solid;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast.success { border-left-color: #10b981; }
+        .toast.error { border-left-color: #ef4444; }
+        .toast.info { border-left-color: #3b82f6; }
+
+        .toast-content {
+            font-size: 14px;
+            color: #333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        @media (max-width: 768px) {
+            body { padding: 12px; }
+            .navbar { flex-direction: column; text-align: center; }
+            .product-table th, .product-table td { padding: 12px 8px; font-size: 13px; }
+            .quantity-input { width: 60px; }
+            .btn-order { padding: 6px 12px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div class="logo">
+            <h2>⚡ 秒杀系统 | 商品中心</h2>
+        </div>
+        <div class="user-info">
+            <span>👤 欢迎回来</span>
+            <button class="btn-logout" id="logoutBtn">退出登录</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3>➕ 创建新商品</h3>
+        </div>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>商品名称</label>
+                <input type="text" id="productName" class="form-control" placeholder="例：iPhone 15 Pro">
+            </div>
+            <div class="form-group">
+                <label>价格 (¥)</label>
+                <input type="number" id="productPrice" class="form-control" step="0.01" placeholder="0.00">
+            </div>
+            <div class="form-group">
+                <label>库存数量</label>
+                <input type="number" id="productStock" class="form-control" placeholder="100">
+            </div>
+            <div class="form-group" style="justify-content: flex-end;">
+                <button class="btn btn-primary" id="createBtn">✨ 创建商品</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3>📦 商品列表</h3>
+            <button class="btn btn-secondary btn-sm" id="refreshBtn">🔄 刷新列表</button>
+        </div>
+        <div class="table-container">
+            <table class="product-table">
+                <thead>
+                    <tr><th>ID</th><th>商品名称</th><th>价格 (¥)</th><th>库存</th><th>下单数量</th><th>操作</th></tr>
+                </thead>
+                <tbody id="productList"><tr><td colspan="6" class="loading">加载中...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        const TOKEN_KEY = 'demo.jwt_token';
+
+        const productList = document.getElementById('productList');
+        const createBtn = document.getElementById('createBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        const token = localStorage.getItem(TOKEN_KEY);
+        if (!token) window.location.href = '/';
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<div class="toast-content">${type === 'success' ? '✓ ' : type === 'error' ? '✗ ' : 'ℹ '}${message}</div>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        async function apiRequest(endpoint, options = {}) {
+            const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...options.headers };
+            const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+            const text = await response.text();
+            let data;
+            try { data = JSON.parse(text); } catch (e) { data = { message: text }; }
+            if (!response.ok) {
+                if (response.status === 401) { localStorage.removeItem(TOKEN_KEY); window.location.href = '/'; }
+                throw new Error(data.message || `HTTP ${response.status}`);
+            }
+            return data;
+        }
+
+        async function loadProducts() {
+            try {
+                const products = await apiRequest('/product');
+                if (!products || products.length === 0) {
+                    productList.innerHTML = '<tr><td colspan="6" class="empty-state">📭 暂无商品，快来创建第一个商品吧！</td></tr>';
+                    return;
+                }
+                productList.innerHTML = products.map(p => `
+                    <tr>
+                        <td>${p.id}</td>
+                        <td><strong>${escapeHtml(p.name)}</strong></td>
+                        <td style="color: #f59e0b; font-weight: 600;">¥ ${p.price}</td>
+                        <td>${p.stock}</td>
+                        <td><input type="number" id="qty-${p.id}" class="quantity-input" value="1" min="1" max="${p.stock}"></td>
+                        <td><button class="btn btn-order btn-sm" onclick="orderProduct(${p.id})">🛒 立即下单</button></td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                productList.innerHTML = `<tr><td colspan="6" class="empty-state">⚠️ 加载失败：${error.message}</td></tr>`;
+                showToast(`加载失败：${error.message}`, 'error');
+            }
+        }
+
+        window.orderProduct = async function(productId) {
+            const qtyInput = document.getElementById(`qty-${productId}`);
+            const quantity = parseInt(qtyInput?.value || 1);
+            if (quantity <= 0) { showToast('请输入有效的下单数量', 'error'); return; }
+            try {
+                const order = await apiRequest('/order', { method: 'POST', body: JSON.stringify({ productId, quantity }) });
+                showToast(`🎉 下单成功！订单号：${order.id}`, 'success');
+                setTimeout(() => loadProducts(), 500);
+            } catch (error) {
+                showToast(`下单失败：${error.message}`, 'error');
+            }
+        };
+
+        async function createProduct() {
+            const name = document.getElementById('productName').value.trim();
+            const price = parseFloat(document.getElementById('productPrice').value);
+            const stock = parseInt(document.getElementById('productStock').value);
+            if (!name) { showToast('请填写商品名称', 'error'); return; }
+            if (isNaN(price) || price <= 0) { showToast('请填写有效的价格', 'error'); return; }
+            if (isNaN(stock) || stock < 0) { showToast('请填写有效的库存数量', 'error'); return; }
+            createBtn.disabled = true;
+            createBtn.textContent = '创建中...';
+            try {
+                await apiRequest('/product', { method: 'POST', body: JSON.stringify({ name, price, stock }) });
+                showToast('✅ 商品创建成功！', 'success');
+                document.getElementById('productName').value = '';
+                document.getElementById('productPrice').value = '';
+                document.getElementById('productStock').value = '';
+                await loadProducts();
+            } catch (error) {
+                showToast(`创建失败：${error.message}`, 'error');
+            } finally {
+                createBtn.disabled = false;
+                createBtn.textContent = '✨ 创建商品';
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem(TOKEN_KEY);
+            showToast('已退出登录', 'info');
+            setTimeout(() => window.location.href = '/', 500);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        createBtn.addEventListener('click', createProduct);
+        refreshBtn.addEventListener('click', loadProducts);
+        logoutBtn.addEventListener('click', logout);
+        loadProducts();
+    </script>
+</body>
+</html>

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 管理后台</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="admin">
+<header class="site-header" id="siteHeader"></header>
+<main class="page admin-page">
+    <div class="section-head">
+        <div>
+            <h2>商城管理后台</h2>
+            <p>管理商品、库存、销量、秒杀时间、优惠券规则和用户信息。</p>
+        </div>
+        <a class="btn ghost" href="/shop.html">返回商城</a>
+    </div>
+
+    <section class="admin-stats" id="adminStats"></section>
+
+    <section class="admin-layout">
+        <div class="panel">
+            <div class="panel-body">
+                <h3 style="margin-top:0;">商品信息编辑</h3>
+                <form class="auth-form" id="productForm">
+                    <input type="hidden" id="productId">
+                    <div class="filters" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+                        <div class="field"><label for="productName">商品名称</label><input id="productName" required></div>
+                        <div class="field"><label for="productPrice">当前价格</label><input id="productPrice" type="number" min="0" step="0.01" required></div>
+                        <div class="field"><label for="productOriginalPrice">原价</label><input id="productOriginalPrice" type="number" min="0" step="0.01"></div>
+                        <div class="field"><label for="productStock">库存</label><input id="productStock" type="number" min="0" required></div>
+                        <div class="field"><label for="productCategory">分类 ID</label><input id="productCategory" type="number" min="1" value="1" required></div>
+                        <div class="field"><label for="productTag">标签</label><input id="productTag" placeholder="热卖 / 新品 / 秒杀"></div>
+                        <div class="field"><label for="seckillPrice">秒杀价</label><input id="seckillPrice" type="number" min="0" step="0.01"></div>
+                        <div class="field"><label for="seckillStart">秒杀开始</label><input id="seckillStart" type="datetime-local"></div>
+                        <div class="field"><label for="seckillEnd">秒杀结束</label><input id="seckillEnd" type="datetime-local"></div>
+                    </div>
+                    <div class="field"><label for="productCover">封面图片 URL</label><input id="productCover" placeholder="图片 URL"></div>
+                    <div class="field"><label for="productDesc">商品描述</label><textarea id="productDesc" rows="4"></textarea></div>
+                    <div class="toolbar">
+                        <button class="btn primary" type="submit" id="saveProductBtn">保存商品</button>
+                        <button class="btn ghost" type="button" id="resetProductBtn">新增模式</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <aside class="panel">
+            <div class="panel-body">
+                <h3 style="margin-top:0;">优惠券规则</h3>
+                <form class="auth-form" id="couponForm">
+                    <div class="field"><label for="couponCode">券码</label><input id="couponCode" placeholder="例如 DIGITAL80" required></div>
+                    <div class="field"><label for="couponTitle">名称</label><input id="couponTitle" placeholder="数码满800减80" required></div>
+                    <div class="form-grid">
+                        <div class="field"><label for="couponThreshold">门槛</label><input id="couponThreshold" type="number" min="0" step="0.01" value="0"></div>
+                        <div class="field"><label for="couponDiscount">优惠</label><input id="couponDiscount" type="number" min="0" step="0.01" required></div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="field"><label for="couponCategory">限定分类 ID</label><input id="couponCategory" type="number" min="1" placeholder="可空"></div>
+                        <div class="field"><label for="couponProduct">限定商品 ID</label><input id="couponProduct" type="number" min="1" placeholder="可空"></div>
+                    </div>
+                    <button class="btn primary" type="submit">创建优惠券</button>
+                </form>
+            </div>
+        </aside>
+    </section>
+
+    <section class="section admin-layout">
+        <div class="panel">
+            <div class="panel-body">
+                <div class="section-head"><div><h2>商品库存与销量</h2><p>点击编辑可修改商品信息和秒杀时间。</p></div></div>
+                <div class="admin-table" id="productTable"></div>
+            </div>
+        </div>
+        <aside class="panel">
+            <div class="panel-body">
+                <h2 style="margin-top:0;">销量排行</h2>
+                <div id="salesRank"></div>
+            </div>
+        </aside>
+    </section>
+
+    <section class="section admin-layout">
+        <div class="panel">
+            <div class="panel-body">
+                <h2 style="margin-top:0;">用户信息</h2>
+                <div class="admin-table" id="userTable"></div>
+            </div>
+        </div>
+        <aside class="panel">
+            <div class="panel-body">
+                <h2 style="margin-top:0;">优惠券列表</h2>
+                <div id="couponList"></div>
+            </div>
+        </aside>
+    </section>
+</main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, apiRequest, formatMoney, formatDate, escapeHtml, toast, loading, emptyState, renderHeader } = AppCommon;
+    let dashboard = null;
+
+    function toLocalInput(value) {
+        if (!value) return "";
+        return String(value).slice(0, 16);
+    }
+
+    function dateValue(id) {
+        return $(id).value ? $(id).value : null;
+    }
+
+    function productPayload() {
+        return {
+            name: $("#productName").value.trim(),
+            price: Number($("#productPrice").value),
+            originalPrice: $("#productOriginalPrice").value ? Number($("#productOriginalPrice").value) : Number($("#productPrice").value),
+            stock: Number($("#productStock").value),
+            categoryId: Number($("#productCategory").value),
+            tag: $("#productTag").value.trim(),
+            coverImage: $("#productCover").value.trim(),
+            description: $("#productDesc").value.trim(),
+            seckillPrice: $("#seckillPrice").value ? Number($("#seckillPrice").value) : null,
+            seckillStartAt: dateValue("#seckillStart"),
+            seckillEndAt: dateValue("#seckillEnd"),
+            status: "ACTIVE"
+        };
+    }
+
+    function resetProductForm() {
+        $("#productForm").reset();
+        $("#productId").value = "";
+        $("#productCategory").value = "1";
+        $("#saveProductBtn").textContent = "保存商品";
+    }
+
+    function editProduct(product) {
+        $("#productId").value = product.id;
+        $("#productName").value = product.name || "";
+        $("#productPrice").value = Number(product.price || 0);
+        $("#productOriginalPrice").value = Number(product.originalPrice || product.price || 0);
+        $("#productStock").value = Number(product.stock || 0);
+        $("#productCategory").value = Number(product.categoryId || 1);
+        $("#productTag").value = product.tag || "";
+        $("#productCover").value = product.coverImage || "";
+        $("#productDesc").value = product.description || "";
+        $("#seckillPrice").value = product.seckillPrice || "";
+        $("#seckillStart").value = toLocalInput(product.seckillStartAt);
+        $("#seckillEnd").value = toLocalInput(product.seckillEndAt);
+        $("#saveProductBtn").textContent = "更新商品";
+        scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function renderDashboard() {
+        const stats = dashboard.stats || {};
+        $("#adminStats").innerHTML = `
+            <div><span>商品数</span><strong>${stats.productCount || 0}</strong></div>
+            <div><span>用户数</span><strong>${stats.userCount || 0}</strong></div>
+            <div><span>订单数</span><strong>${stats.orderCount || 0}</strong></div>
+            <div><span>交易额</span><strong>${formatMoney(stats.paidAmount || 0)}</strong></div>
+        `;
+        $("#productTable").innerHTML = `
+            <table>
+                <thead><tr><th>ID</th><th>商品</th><th>价格</th><th>库存</th><th>销量</th><th>秒杀时间</th><th>操作</th></tr></thead>
+                <tbody>${(dashboard.products || []).map(product => `
+                    <tr>
+                        <td>${product.id}</td>
+                        <td>${escapeHtml(product.name)}</td>
+                        <td>${formatMoney(product.price)}</td>
+                        <td>${product.stock || 0}</td>
+                        <td>${product.salesCount || 0}</td>
+                        <td>${product.seckillEndAt ? `${formatDate(product.seckillStartAt)} - ${formatDate(product.seckillEndAt)}` : "未设置"}</td>
+                        <td><button class="btn ghost admin-edit" data-id="${product.id}" type="button">编辑</button></td>
+                    </tr>
+                `).join("")}</tbody>
+            </table>
+        `;
+        $("#salesRank").innerHTML = (dashboard.topProducts || []).map((product, index) => `
+            <div class="summary-row"><span>${index + 1}. ${escapeHtml(product.name)}</span><strong>${product.salesCount || 0} 件</strong></div>
+        `).join("");
+        $("#userTable").innerHTML = `
+            <table>
+                <thead><tr><th>ID</th><th>账号</th><th>昵称</th><th>角色</th><th>注册时间</th></tr></thead>
+                <tbody>${(dashboard.users || []).map(user => `
+                    <tr><td>${user.id}</td><td>${escapeHtml(user.username)}</td><td>${escapeHtml(user.nickName || "-")}</td><td>${escapeHtml(user.role)}</td><td>${formatDate(user.createdAt)}</td></tr>
+                `).join("")}</tbody>
+            </table>
+        `;
+        $("#couponList").innerHTML = (dashboard.coupons || []).map(coupon => `
+            <div class="coupon-card">
+                <strong>${escapeHtml(coupon.title)}</strong>
+                <span>${escapeHtml(coupon.code)} · 满 ${formatMoney(coupon.thresholdAmount)} 减 ${formatMoney(coupon.discountAmount)}</span>
+            </div>
+        `).join("");
+        document.querySelectorAll(".admin-edit").forEach(button => {
+            button.addEventListener("click", () => editProduct((dashboard.products || []).find(item => Number(item.id) === Number(button.dataset.id))));
+        });
+    }
+
+    async function loadDashboard() {
+        $("#adminStats").innerHTML = loading("正在加载管理数据...");
+        dashboard = await apiRequest("/admin/dashboard");
+        renderDashboard();
+    }
+
+    async function init() {
+        const user = await AppCommon.loadCurrentUser();
+        if (!user || user.role !== "ADMIN") {
+            document.querySelector(".admin-page").innerHTML = emptyState("需要管理员权限", "请使用管理员账号登录后再进入管理后台。", '<a class="btn primary" href="/index.html">去登录</a>');
+            return;
+        }
+        await renderHeader("admin");
+        $("#resetProductBtn").addEventListener("click", resetProductForm);
+        $("#productForm").addEventListener("submit", async event => {
+            event.preventDefault();
+            const id = $("#productId").value;
+            await apiRequest(id ? `/product/${id}` : "/product", {
+                method: id ? "PUT" : "POST",
+                body: JSON.stringify(productPayload())
+            });
+            toast(id ? "商品已更新" : "商品已添加", "success");
+            resetProductForm();
+            await loadDashboard();
+        });
+        $("#couponForm").addEventListener("submit", async event => {
+            event.preventDefault();
+            await apiRequest("/admin/coupon", {
+                method: "POST",
+                body: JSON.stringify({
+                    code: $("#couponCode").value.trim().toUpperCase(),
+                    title: $("#couponTitle").value.trim(),
+                    thresholdAmount: Number($("#couponThreshold").value || 0),
+                    discountAmount: Number($("#couponDiscount").value || 0),
+                    categoryId: $("#couponCategory").value ? Number($("#couponCategory").value) : null,
+                    productId: $("#couponProduct").value ? Number($("#couponProduct").value) : null,
+                    status: "ACTIVE"
+                })
+            });
+            toast("优惠券已创建", "success");
+            event.target.reset();
+            await loadDashboard();
+        });
+        await loadDashboard();
+    }
+
+    init();
+</script>
+</body>
+</html>

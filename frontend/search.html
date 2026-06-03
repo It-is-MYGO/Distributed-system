@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 商品搜索</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="search">
+<header class="site-header" id="siteHeader"></header>
+<main class="page search-market-page">
+    <section class="search-market-head">
+        <a class="search-logo" href="/shop.html"><span>F</span><strong>分布式秒杀</strong><small>flash.mall</small></a>
+        <div class="search-center">
+            <div class="search-box">
+                <input id="keywordInput" placeholder="输入商品名称、分类或描述">
+                <button id="searchBtn" type="button">搜索</button>
+            </div>
+            <div class="hot-words" id="quickTabs">
+                <button class="active" data-keyword="">全部</button>
+                <button data-keyword="手机">手机</button>
+                <button data-keyword="耳机">耳机</button>
+                <button data-keyword="家电">家电</button>
+                <button data-keyword="秒杀">秒杀</button>
+                <button data-keyword="美妆">美妆</button>
+            </div>
+        </div>
+        <select id="sortSelect" class="market-sort">
+            <option value="default">综合推荐</option>
+            <option value="new">新品优先</option>
+            <option value="price">价格优先</option>
+        </select>
+    </section>
+
+    <section class="market-results">
+        <div class="market-section-title">
+            <h2><span>♙</span><em id="resultTitle">热卖商品</em></h2>
+            <button class="filter-pill" type="button">展开筛选⌄</button>
+        </div>
+        <p id="resultSub" class="market-sub">正在准备商品列表。</p>
+        <div class="market-grid" id="productGrid"></div>
+        <div class="toolbar" id="pagination" style="justify-content:center;margin-top:20px;"></div>
+    </section>
+</main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, $$, apiRequest, formatMoney, productImage, escapeHtml, bindAddToCart, loading, emptyState, renderHeader } = AppCommon;
+    let currentPage = 0;
+    let totalPages = 0;
+
+    function readQuery() {
+        const params = new URLSearchParams(location.search);
+        return {
+            keyword: params.get("keyword") || "",
+            orderBy: params.get("orderBy") || "default"
+        };
+    }
+
+    function writeQuery(keyword, orderBy) {
+        const params = new URLSearchParams();
+        if (keyword) params.set("keyword", keyword);
+        if (orderBy && orderBy !== "default") params.set("orderBy", orderBy);
+        history.replaceState(null, "", params.toString() ? `?${params}` : location.pathname);
+    }
+
+    function marketProductCard(product, index = 0) {
+        const stock = Number(product.stock || 0);
+        const sales = Number(product.salesCount || 0);
+        const badge = index % 2 === 0 ? "自营" : "秒杀";
+        const rank = Number(product.categorySalesRank || 0);
+        const seckill = seckillText(product);
+        return `
+            <article class="market-card">
+                <a class="market-media" href="/detail.html?productId=${product.id}">
+                    <img src="${escapeHtml(productImage(product, index))}" alt="${escapeHtml(product.name || "商品图片")}">
+                </a>
+                <a class="market-name" href="/detail.html?productId=${product.id}"><span>${badge}</span>${escapeHtml(product.name || "未命名商品")}</a>
+                <div class="market-coupons"><span>${escapeHtml(product.couponText || "好评率98%")}</span><span>${rank ? `品类第${rank}名` : "精选商品"}</span></div>
+                ${seckill ? `<div class="seckill-countdown">${escapeHtml(seckill)}</div>` : ""}
+                <strong class="market-price">${formatMoney(product.price)}</strong>
+                <p>${escapeHtml(product.tag || "官方旗舰店")} · 已售${sales}件</p>
+                <button class="add-plus js-add-cart" type="button" data-id="${product.id}" ${stock <= 0 ? "disabled" : ""} aria-label="加入购物车">+</button>
+            </article>
+        `;
+    }
+
+    function seckillText(product) {
+        if (!product.seckillEndAt || !product.seckillPrice) return "";
+        const end = new Date(product.seckillEndAt).getTime();
+        const start = product.seckillStartAt ? new Date(product.seckillStartAt).getTime() : 0;
+        const now = Date.now();
+        if (now < start || now >= end) return "";
+        const totalSeconds = Math.max(0, Math.floor((end - now) / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        return hours > 0 ? `限时秒杀剩余 ${hours}小时${minutes}分钟` : `限时秒杀剩余 ${minutes}分钟`;
+    }
+
+    async function search(page = 0) {
+        currentPage = page;
+        const keyword = $("#keywordInput").value.trim();
+        const orderBy = $("#sortSelect").value;
+        writeQuery(keyword, orderBy);
+        $("#productGrid").innerHTML = loading("正在搜索商品...");
+        $("#resultTitle").textContent = keyword ? `搜索：${keyword}` : "热卖商品";
+        $$("#quickTabs button").forEach(tab => tab.classList.toggle("active", tab.dataset.keyword === keyword));
+        try {
+            const data = await apiRequest(`/product/search?keyword=${encodeURIComponent(keyword)}&page=${page}&size=12&orderBy=${encodeURIComponent(orderBy)}`);
+            const products = data?.content || [];
+            totalPages = data?.totalPages || 0;
+            $("#resultSub").textContent = `共找到 ${data?.totalElements ?? products.length} 个商品`;
+            $("#productGrid").innerHTML = products.length
+                ? products.map(marketProductCard).join("")
+                : emptyState("没有找到商品", "换个关键词试试，或者返回首页看看精选商品。", '<a class="btn ghost" href="/shop.html">返回首页</a>');
+            bindAddToCart($("#productGrid"));
+            renderPagination();
+        } catch (error) {
+            $("#productGrid").innerHTML = emptyState("搜索失败", error.message);
+        }
+    }
+
+    function renderPagination() {
+        if (totalPages <= 1) {
+            $("#pagination").innerHTML = "";
+            return;
+        }
+        const buttons = [];
+        buttons.push(`<button class="btn" data-page="${Math.max(0, currentPage - 1)}" ${currentPage === 0 ? "disabled" : ""}>上一页</button>`);
+        for (let i = 0; i < totalPages; i++) {
+            buttons.push(`<button class="btn ${i === currentPage ? "primary" : ""}" data-page="${i}">${i + 1}</button>`);
+        }
+        buttons.push(`<button class="btn" data-page="${Math.min(totalPages - 1, currentPage + 1)}" ${currentPage >= totalPages - 1 ? "disabled" : ""}>下一页</button>`);
+        $("#pagination").innerHTML = buttons.join("");
+    }
+
+    async function init() {
+        await renderHeader("search");
+        const query = readQuery();
+        $("#keywordInput").value = query.keyword;
+        $("#sortSelect").value = query.orderBy;
+        $$("#quickTabs button").forEach(tab => tab.classList.toggle("active", tab.dataset.keyword === query.keyword));
+        $("#searchBtn").addEventListener("click", () => search(0));
+        $("#keywordInput").addEventListener("keydown", event => {
+            if (event.key === "Enter") search(0);
+        });
+        $("#sortSelect").addEventListener("change", () => search(0));
+        $("#quickTabs").addEventListener("click", event => {
+            const tab = event.target.closest("button[data-keyword]");
+            if (!tab) return;
+            $("#keywordInput").value = tab.dataset.keyword;
+            search(0);
+        });
+        $("#pagination").addEventListener("click", event => {
+            const btn = event.target.closest("button[data-page]");
+            if (btn && !btn.disabled) search(Number(btn.dataset.page));
+        });
+        search(0);
+    }
+
+    init();
+</script>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 订单详情</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="orders">
+<header class="site-header" id="siteHeader"></header>
+<main class="page order-detail-page" id="detailRoot"></main>
+
+<div class="modal-backdrop" id="reviewModal">
+    <div class="modal-card">
+        <div class="section-head">
+            <div>
+                <h2 style="font-size:20px;">评价订单</h2>
+                <p>可以给本次订单商品打分并留言。</p>
+            </div>
+            <button class="auth-close" id="closeReviewModal" type="button">×</button>
+        </div>
+        <form class="auth-form" id="reviewForm">
+            <div class="rating-picker" id="ratingPicker">
+                <button type="button" data-star="1">★</button>
+                <button type="button" data-star="2">★</button>
+                <button type="button" data-star="3">★</button>
+                <button type="button" data-star="4">★</button>
+                <button type="button" data-star="5">★</button>
+            </div>
+            <div class="field">
+                <label for="reviewContent">评价内容</label>
+                <textarea id="reviewContent" rows="4" placeholder="写下你的使用体验"></textarea>
+            </div>
+            <button class="btn primary" type="submit">提交评价</button>
+        </form>
+    </div>
+</div>
+
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, $$, apiRequest, formatMoney, formatDate, mapStatus, escapeHtml, requireLogin, loading, emptyState, renderHeader, toast } = AppCommon;
+    let currentOrder = null;
+    let currentItems = [];
+    let rating = 5;
+
+    function orderId() {
+        return new URLSearchParams(location.search).get("orderId");
+    }
+
+    function statusMeta(order) {
+        const status = String(order.status || "").toUpperCase();
+        return {
+            CREATED: ["待支付", "请在 15 分钟内完成支付，超时订单会自动取消。", "pending"],
+            PAID: ["已支付", "订单已支付，仓库正在处理。", "paid"],
+            SHIPPED: ["运输中", "包裹已出库，正在运输途中。", "shipping"],
+            DELIVERED: ["已到货", "包裹已送达，请确认收货。", "arrived"],
+            COMPLETED: ["已完成", order.reviewed ? "订单已签收并完成评价。" : "订单已签收，可以评价本次购物体验。", "done"],
+            CANCELLED: ["已取消", "订单已取消，不再展示物流信息。", "cancelled"]
+        }[status] || [mapStatus(status), "订单状态已更新。", "pending"];
+    }
+
+    function logistics(order) {
+        if (order.status === "CANCELLED" || order.status === "CREATED") return "";
+        const active = String(order.logisticsStatus || order.status || "").toUpperCase();
+        const steps = [
+            ["PAID", "订单已支付", formatDate(order.paidAt || order.createdAt)],
+            ["PACKING", "仓库处理中", "系统正在分拣打包"],
+            ["IN_TRANSIT", "运输中", active === "PAID" ? "等待出库" : "包裹已发往目的地"],
+            ["DELIVERED", "已到货", order.deliveredAt ? formatDate(order.deliveredAt) : "预计很快送达"],
+            ["SIGNED", "已签收", order.completedAt ? formatDate(order.completedAt) : "等待用户确认"]
+        ];
+        const orderIndex = { PAID: 0, PACKING: 1, IN_TRANSIT: 2, DELIVERED: 3, SIGNED: 4, COMPLETED: 4, SHIPPED: 2 };
+        const current = orderIndex[active] ?? orderIndex[order.status] ?? 0;
+        return `
+            <section class="section panel">
+                <div class="panel-body">
+                    <div class="section-head">
+                        <div>
+                            <h2>物流详情</h2>
+                            <p>物流状态由后端按支付时间模拟推进，不在前端写死。</p>
+                        </div>
+                    </div>
+                    <div class="summary-row"><span>物流公司</span><strong>${escapeHtml(order.carrier || "顺丰速运")}</strong></div>
+                    <div class="summary-row"><span>物流单号</span><strong>${escapeHtml(order.trackingNo || "-")}</strong></div>
+                    <div class="timeline">
+                        ${steps.map((step, index) => `
+                            <div class="timeline-item ${index <= current ? "active" : ""}">
+                                <strong>${step[1]}</strong>
+                                <span>${step[2]}</span>
+                            </div>
+                        `).join("")}
+                    </div>
+                </div>
+            </section>
+        `;
+    }
+
+    function render() {
+        const [title, desc, tone] = statusMeta(currentOrder);
+        $("#detailRoot").innerHTML = `
+            <section class="order-status-hero ${tone}">
+                <div>
+                    <span>${title}</span>
+                    <h1>${escapeHtml(currentOrder.orderNo)}</h1>
+                    <p>${desc}</p>
+                </div>
+                <strong>${formatMoney(currentOrder.totalAmount)}</strong>
+            </section>
+            <section class="panel">
+                <div class="panel-body">
+                    <div class="summary-row"><span>下单时间</span><strong>${formatDate(currentOrder.createdAt)}</strong></div>
+                    <div class="summary-row"><span>收货人</span><strong>${escapeHtml(currentOrder.receiverName || "-")} ${escapeHtml(currentOrder.receiverPhone || "")}</strong></div>
+                    <div class="summary-row"><span>收货地址</span><strong>${escapeHtml(currentOrder.userAddress || "未填写")}</strong></div>
+                </div>
+                ${currentItems.map(item => `
+                    <div class="order-line" style="grid-template-columns:92px minmax(0,1fr) 90px 120px;">
+                        <img src="${escapeHtml(item.productCoverImage || "mall/image/sub_banner/r1.jpg")}" alt="${escapeHtml(item.productName)}">
+                        <div><strong>${escapeHtml(item.productName || "商品")}</strong><p style="color:var(--muted);">单价 ${formatMoney(item.unitPrice)}</p></div>
+                        <span>x ${item.quantity || 0}</span>
+                        <strong>${formatMoney(Number(item.unitPrice || 0) * Number(item.quantity || 0))}</strong>
+                    </div>
+                `).join("")}
+            </section>
+            ${logistics(currentOrder)}
+            <div class="toolbar" style="margin-top:18px;">
+                <a class="btn ghost" href="/orders.html">返回订单</a>
+                ${currentOrder.status === "CREATED" ? `<a class="btn primary" href="/pay-select.html?orderId=${currentOrder.id}">继续支付</a>` : ""}
+                ${currentOrder.status === "DELIVERED" ? `<button class="btn primary" id="receiveBtn" type="button">确认签收</button>` : ""}
+                ${currentOrder.status === "COMPLETED" && !currentOrder.reviewed ? `<button class="btn primary" id="reviewBtn" type="button">评价订单</button>` : ""}
+            </div>
+        `;
+        $("#receiveBtn")?.addEventListener("click", receiveOrder);
+        $("#reviewBtn")?.addEventListener("click", openReview);
+    }
+
+    async function receiveOrder() {
+        currentOrder = await apiRequest(`/order/${currentOrder.id}/receive`, { method: "POST" });
+        toast("签收成功，订单已完成", "success");
+        render();
+    }
+
+    function openReview() {
+        rating = 5;
+        updateStars();
+        $("#reviewContent").value = "";
+        $("#reviewModal").classList.add("show");
+    }
+
+    function closeReview() {
+        $("#reviewModal").classList.remove("show");
+    }
+
+    function updateStars() {
+        $$("#ratingPicker button").forEach(button => button.classList.toggle("active", Number(button.dataset.star) <= rating));
+    }
+
+    async function init() {
+        if (!requireLogin()) return;
+        await renderHeader("orders");
+        const id = orderId();
+        if (!id) {
+            $("#detailRoot").innerHTML = emptyState("缺少订单 ID", "请从订单列表进入详情。");
+            return;
+        }
+        $("#detailRoot").innerHTML = loading("正在加载订单详情...");
+        try {
+            [currentOrder, currentItems] = await Promise.all([
+                apiRequest(`/order/${id}`),
+                apiRequest(`/order/${id}/items`)
+            ]);
+            render();
+        } catch (error) {
+            $("#detailRoot").innerHTML = emptyState("订单详情加载失败", error.message);
+        }
+    }
+
+    $("#closeReviewModal").addEventListener("click", closeReview);
+    $("#reviewModal").addEventListener("click", event => {
+        if (event.target === $("#reviewModal")) closeReview();
+    });
+    $("#ratingPicker").addEventListener("click", event => {
+        const button = event.target.closest("button[data-star]");
+        if (!button) return;
+        rating = Number(button.dataset.star);
+        updateStars();
+    });
+    $("#reviewForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const content = $("#reviewContent").value.trim();
+        if (!content) return toast("请填写评价内容", "error");
+        currentOrder = await apiRequest(`/order/${currentOrder.id}/review`, {
+            method: "POST",
+            body: JSON.stringify({ rating, content })
+        });
+        closeReview();
+        toast("评价成功", "success");
+        render();
+    });
+
+    init();
+</script>
+</body>
+</html>

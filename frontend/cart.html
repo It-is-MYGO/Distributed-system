@@ -1,0 +1,151 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 购物车</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="cart">
+<header class="site-header" id="siteHeader"></header>
+<main class="page">
+    <div class="section-head">
+        <div>
+            <h2>购物车</h2>
+            <p>支持勾选商品、修改数量、删除和提交结算。</p>
+        </div>
+        <a class="btn ghost" href="/search.html">继续购物</a>
+    </div>
+    <section class="cart-layout">
+        <div class="panel" id="cartList"></div>
+        <aside class="panel summary" id="cartSummary"></aside>
+    </section>
+</main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, $$, apiRequest, formatMoney, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader } = AppCommon;
+    let cartItems = [];
+
+    function selectedIds() {
+        return $$(".cart-check:checked").map(input => Number(input.value));
+    }
+
+    function totals() {
+        const ids = selectedIds();
+        return cartItems.reduce((acc, item) => {
+            if (ids.includes(Number(item.id))) {
+                acc.count += Number(item.quantity || 0);
+                acc.amount += Number(item.unitPrice || 0) * Number(item.quantity || 0);
+            }
+            return acc;
+        }, { count: 0, amount: 0 });
+    }
+
+    function renderSummary() {
+        const allSelected = cartItems.length > 0 && selectedIds().length === cartItems.length;
+        const total = totals();
+        $("#cartSummary").innerHTML = `
+            <h3 style="margin-top:0;">结算明细</h3>
+            <div class="summary-row"><span>已选商品</span><strong>${total.count} 件</strong></div>
+            <div class="summary-row"><span>商品金额</span><strong>${formatMoney(total.amount)}</strong></div>
+            <div class="summary-row"><span>运费</span><strong>免运费</strong></div>
+            <div class="summary-row"><span>应付合计</span><strong class="money">${formatMoney(total.amount)}</strong></div>
+            <label style="display:flex;gap:8px;align-items:center;margin:18px 0;">
+                <input type="checkbox" id="selectAll" ${allSelected ? "checked" : ""}> 全选
+            </label>
+            <button class="btn primary" id="checkoutBtn" style="width:100%;" ${total.count ? "" : "disabled"}>去结算</button>
+        `;
+        $("#selectAll")?.addEventListener("change", event => {
+            $$(".cart-check").forEach(input => input.checked = event.target.checked);
+            renderSummary();
+        });
+        $("#checkoutBtn")?.addEventListener("click", () => {
+            const ids = selectedIds();
+            if (!ids.length) return toast("请选择要结算的商品", "error");
+            sessionStorage.setItem("checkout.cartItemIds", JSON.stringify(ids));
+            location.href = "/order-settle.html";
+        });
+    }
+
+    function renderCart() {
+        if (!cartItems.length) {
+            $("#cartList").innerHTML = emptyState("购物车是空的", "去挑几件商品再来结算。", '<a class="btn primary" href="/search.html">去逛逛</a>');
+            $("#cartSummary").innerHTML = "";
+            return;
+        }
+        $("#cartList").innerHTML = cartItems.map(item => `
+            <div class="cart-item" data-id="${item.id}">
+                <input class="cart-check" type="checkbox" value="${item.id}" checked>
+                <img src="${escapeHtml(item.productCoverImage || "mall/image/sub_banner/r1.jpg")}" alt="${escapeHtml(item.productName)}">
+                <div>
+                    <strong>${escapeHtml(item.productName || "商品")}</strong>
+                    <p style="margin:6px 0 0;color:var(--muted);">单价 ${formatMoney(item.unitPrice)}</p>
+                </div>
+                <div class="qty">
+                    <button data-action="minus">-</button>
+                    <input type="text" value="${item.quantity || 1}" readonly>
+                    <button data-action="plus">+</button>
+                </div>
+                <strong class="money">${formatMoney(Number(item.unitPrice || 0) * Number(item.quantity || 0))}</strong>
+                <button class="btn danger" data-action="delete">删除</button>
+            </div>
+        `).join("");
+        $$(".cart-check").forEach(input => input.addEventListener("change", renderSummary));
+        renderSummary();
+    }
+
+    async function updateQuantity(id, quantity) {
+        try {
+            await apiRequest("/cart", {
+                method: "PUT",
+                body: JSON.stringify({ cartItemId: Number(id), quantity: Math.max(1, quantity) })
+            });
+            await loadCart();
+            toast("数量已更新", "success");
+        } catch (error) {
+            toast(`更新失败：${error.message}`, "error");
+        }
+    }
+
+    async function deleteItem(id) {
+        try {
+            await apiRequest(`/cart/${id}`, { method: "DELETE" });
+            await loadCart();
+            await renderHeader("cart");
+            toast("已删除商品", "success");
+        } catch (error) {
+            toast(`删除失败：${error.message}`, "error");
+        }
+    }
+
+    async function loadCart() {
+        if (!requireLogin()) return;
+        $("#cartList").innerHTML = loading("正在加载购物车...");
+        try {
+            cartItems = await apiRequest("/cart") || [];
+            renderCart();
+        } catch (error) {
+            $("#cartList").innerHTML = emptyState("购物车加载失败", error.message);
+        }
+    }
+
+    async function init() {
+        await renderHeader("cart");
+        $("#cartList").addEventListener("click", event => {
+            const button = event.target.closest("button[data-action]");
+            if (!button) return;
+            const row = button.closest(".cart-item");
+            const item = cartItems.find(entry => String(entry.id) === row.dataset.id);
+            if (!item) return;
+            if (button.dataset.action === "minus") updateQuantity(item.id, Number(item.quantity || 1) - 1);
+            if (button.dataset.action === "plus") updateQuantity(item.id, Number(item.quantity || 1) + 1);
+            if (button.dataset.action === "delete") deleteItem(item.id);
+        });
+        loadCart();
+    }
+
+    init();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 确认订单</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="cart">
+<header class="site-header" id="siteHeader"></header>
+<main class="page checkout-page">
+    <div class="checkout-tip">请确认真实姓名、手机号和收货地址。订单提交后保留 15 分钟支付时间，超时未支付将自动作废。</div>
+    <section class="checkout-layout">
+        <div class="checkout-main">
+            <section class="checkout-block">
+                <div class="section-head checkout-title">
+                    <div>
+                        <h2>收货人信息</h2>
+                        <p id="userName">正在读取用户资料</p>
+                    </div>
+                    <div class="toolbar">
+                        <button class="btn ghost" id="toggleAddressBtn" type="button" style="display:none;">展开全部</button>
+                        <button class="btn ghost" id="openAddressModalBtn" type="button">新增</button>
+                    </div>
+                </div>
+                <div class="address-book" id="addressBook"></div>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="receiverNameInput">收货人</label>
+                        <input id="receiverNameInput" placeholder="请输入姓名">
+                    </div>
+                    <div class="field">
+                        <label for="receiverPhoneInput">手机号</label>
+                        <input id="receiverPhoneInput" placeholder="请输入手机号">
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="addressInput">详细地址</label>
+                    <textarea id="addressInput" rows="3" placeholder="省 / 市 / 区 / 街道 / 门牌号"></textarea>
+                </div>
+            </section>
+
+            <section class="checkout-block">
+                <div class="section-head checkout-title">
+                    <div>
+                        <h2>订单信息</h2>
+                        <p>提交订单时会完成商品、优惠和支付时限校验。</p>
+                    </div>
+                    <a href="/cart.html">返回购物车</a>
+                </div>
+                <div class="delivery-strip">配送 标准快递 预计 24 小时内发货⌄</div>
+                <div id="settleItems"></div>
+            </section>
+
+            <section class="checkout-block recommend-lite">
+                <h2>顺手买更划算</h2>
+                <div class="mini-goods">
+                    <span>高速充电线 Type-C</span>
+                    <span>便携收纳袋</span>
+                    <span>清洁湿巾补充装</span>
+                </div>
+            </section>
+        </div>
+        <aside class="checkout-summary" id="settleSummary"></aside>
+    </section>
+</main>
+
+<div class="modal-backdrop" id="addressModal">
+    <div class="modal-card">
+        <div class="section-head">
+            <div>
+                <h2 style="font-size:20px;">添加常用收货信息</h2>
+                <p>保存后会作为上方选项卡，后续结算可直接选择。</p>
+            </div>
+            <button class="auth-close" id="closeAddressModalBtn" type="button">×</button>
+        </div>
+        <form class="auth-form" id="addressModalForm">
+            <div class="form-grid">
+                <div class="field">
+                    <label for="modalReceiverName">收货人</label>
+                    <input id="modalReceiverName" placeholder="请输入姓名">
+                </div>
+                <div class="field">
+                    <label for="modalReceiverPhone">手机号</label>
+                    <input id="modalReceiverPhone" placeholder="请输入手机号">
+                </div>
+            </div>
+            <div class="field">
+                <label for="modalAddress">详细地址</label>
+                <textarea id="modalAddress" rows="3" placeholder="省 / 市 / 区 / 街道 / 门牌号"></textarea>
+            </div>
+            <button class="btn primary" type="submit">保存并使用</button>
+        </form>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="couponModal">
+    <div class="modal-card">
+        <div class="section-head">
+            <div>
+                <h2 style="font-size:20px;">选择优惠券</h2>
+                <p>平台券最多一张，可与品类券、单品券叠加。提交订单时由后端按数据库规则校验并核销。</p>
+            </div>
+            <button class="auth-close" id="closeCouponModalBtn" type="button">×</button>
+        </div>
+        <div class="coupon-channel" id="couponChannel"></div>
+        <div class="coupon-list" id="couponModalList"></div>
+    </div>
+</div>
+
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, $$, apiRequest, formatMoney, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader } = AppCommon;
+    const ADDRESS_KEY = "demo.address_book";
+    let checkoutIds = [];
+    let checkoutMode = "cart";
+    let preview = null;
+    let userCoupons = [];
+    let selectedAddressIndex = -1;
+    let addressExpanded = false;
+    let selectedCouponCodes = [];
+
+    function readCheckoutIds() {
+        try {
+            const saved = JSON.parse(sessionStorage.getItem("checkout.cartItemIds") || "[]");
+            return Array.isArray(saved) ? saved.map(Number).filter(Boolean) : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function readBuyNow() {
+        try {
+            const saved = JSON.parse(sessionStorage.getItem("checkout.buyNow") || "null");
+            return saved?.productId ? saved : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function readAddresses() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(ADDRESS_KEY) || "[]");
+            return Array.isArray(saved) ? saved : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function currentReceiver() {
+        return {
+            receiverName: $("#receiverNameInput").value.trim(),
+            receiverPhone: $("#receiverPhoneInput").value.trim(),
+            address: $("#addressInput").value.trim()
+        };
+    }
+
+    function fillReceiver(address) {
+        $("#receiverNameInput").value = address.receiverName || "";
+        $("#receiverPhoneInput").value = address.receiverPhone || "";
+        $("#addressInput").value = address.address || "";
+    }
+
+    function renderAddressBook() {
+        const addresses = readAddresses();
+        const visible = addressExpanded ? addresses : addresses.slice(0, 5);
+        $("#toggleAddressBtn").style.display = addresses.length > 5 ? "" : "none";
+        $("#toggleAddressBtn").textContent = addressExpanded ? "收起" : `展开全部 ${addresses.length} 条`;
+        if (!addresses.length) {
+            $("#addressBook").innerHTML = `<button class="address-tab" type="button" id="emptyAddAddress"><strong>+</strong><span>添加常用收货信息</span></button>`;
+            $("#emptyAddAddress").addEventListener("click", openAddressModal);
+            return;
+        }
+        $("#addressBook").innerHTML = visible.map((item, index) => `
+            <button class="address-tab ${index === selectedAddressIndex ? "active" : ""}" type="button" data-index="${index}">
+                <strong>${escapeHtml(item.receiverName)} ${escapeHtml(item.receiverPhone)}</strong>
+                <span>${escapeHtml(item.address)}</span>
+            </button>
+        `).join("") + `<button class="address-tab" type="button" id="appendAddress"><strong>+</strong><span>新增</span></button>`;
+        $$(".address-tab[data-index]").forEach(tab => {
+            tab.addEventListener("click", () => {
+                selectedAddressIndex = Number(tab.dataset.index);
+                fillReceiver(addresses[selectedAddressIndex]);
+                renderAddressBook();
+            });
+        });
+        $("#appendAddress").addEventListener("click", openAddressModal);
+    }
+
+    function openAddressModal() {
+        const receiver = currentReceiver();
+        $("#modalReceiverName").value = receiver.receiverName;
+        $("#modalReceiverPhone").value = receiver.receiverPhone;
+        $("#modalAddress").value = receiver.address;
+        $("#addressModal").classList.add("show");
+    }
+
+    function closeAddressModal() {
+        $("#addressModal").classList.remove("show");
+    }
+
+    function saveAddress(address) {
+        if (!address.receiverName || !address.receiverPhone || !address.address) {
+            return toast("请先填写完整收货信息", "error");
+        }
+        const addresses = readAddresses().filter(item =>
+            !(item.receiverName === address.receiverName && item.receiverPhone === address.receiverPhone && item.address === address.address)
+        );
+        addresses.unshift(address);
+        localStorage.setItem(ADDRESS_KEY, JSON.stringify(addresses.slice(0, 20)));
+        selectedAddressIndex = 0;
+        fillReceiver(address);
+        renderAddressBook();
+        toast("已保存为常用收货信息", "success");
+        closeAddressModal();
+    }
+
+    function subtotal() {
+        return (preview?.items || []).reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0);
+    }
+
+    function selectedCoupons() {
+        return selectedCouponCodes
+            .map(code => userCoupons.find(item => item.couponCode === code && item.status === "UNUSED"))
+            .filter(Boolean);
+    }
+
+    function couponDiscount() {
+        const amount = subtotal();
+        const discount = selectedCoupons().reduce((sum, coupon) => {
+            if (amount < Number(coupon.thresholdAmount || 0) || !couponApplicable(coupon)) return sum;
+            return sum + Number(coupon.discountAmount || 0);
+        }, 0);
+        return Math.min(discount, amount);
+    }
+
+    function couponScope(coupon) {
+        if (coupon.productId) return `PRODUCT:${coupon.productId}`;
+        if (coupon.categoryId) return `CATEGORY:${coupon.categoryId}`;
+        return "PLATFORM";
+    }
+
+    function couponApplicable(coupon) {
+        const items = preview?.items || [];
+        if (!coupon.productId && !coupon.categoryId) return true;
+        return items.some(item => {
+            const productMatched = !coupon.productId || Number(item.productId) === Number(coupon.productId);
+            const categoryMatched = !coupon.categoryId || Number(item.categoryId) === Number(coupon.categoryId);
+            return productMatched && categoryMatched;
+        });
+    }
+
+    function canToggleCoupon(coupon) {
+        if (selectedCouponCodes.includes(coupon.couponCode)) return true;
+        const scopes = selectedCoupons().map(couponScope);
+        return !scopes.includes(couponScope(coupon));
+    }
+
+    function payableAmount() {
+        return Math.max(0, subtotal() - couponDiscount());
+    }
+
+    function recalc() {
+        preview.totalAmount = subtotal();
+        renderItems(preview?.items || []);
+        renderSummary();
+    }
+
+    function renderItems(items) {
+        if (!items?.length) {
+            $("#settleItems").innerHTML = emptyState("没有可结算商品", "请返回购物车重新选择。", '<a class="btn primary" href="/cart.html">返回购物车</a>');
+            return;
+        }
+        $("#settleItems").innerHTML = items.map((item, index) => `
+            <div class="order-line settle-line" data-index="${index}">
+                <img src="${escapeHtml(item.productCoverImage || "mall/image/sub_banner/r1.jpg")}" alt="${escapeHtml(item.productName)}">
+                <div><strong>${escapeHtml(item.productName || "商品")}</strong><p style="color:var(--muted);">单价 ${formatMoney(item.unitPrice)}</p></div>
+                <div class="qty">
+                    <button data-qty="minus" type="button">-</button>
+                    <input type="text" value="${item.quantity || 1}" readonly>
+                    <button data-qty="plus" type="button">+</button>
+                </div>
+                <strong class="money">${formatMoney(Number(item.unitPrice || 0) * Number(item.quantity || 0))}</strong>
+            </div>
+        `).join("");
+        $$("[data-qty]").forEach(button => {
+            button.addEventListener("click", () => {
+                const row = button.closest(".settle-line");
+                const item = preview.items[Number(row.dataset.index)];
+                const stock = Number(item.stock || item.quantity || 1);
+                const next = button.dataset.qty === "plus"
+                    ? Math.min(stock, Number(item.quantity || 1) + 1)
+                    : Math.max(1, Number(item.quantity || 1) - 1);
+                item.quantity = next;
+                recalc();
+            });
+        });
+    }
+
+    function renderSummary() {
+        const count = (preview?.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+        const amount = subtotal();
+        const discount = couponDiscount();
+        const coupons = selectedCoupons();
+        $("#settleSummary").innerHTML = `
+            <div class="pay-safe">支付安全保障中</div>
+            <h3>付款详情 <span>共${count}件商品</span></h3>
+            <div class="summary-row"><span>商品总额</span><strong>${formatMoney(amount)}</strong></div>
+            <div class="coupon-panel">
+                <div class="section-head" style="margin-bottom:12px;">
+                    <h3 style="margin:0;font-size:18px;">选择优惠券</h3>
+                    <span>${coupons.length ? `${coupons.length} 张 · 已减 ${formatMoney(discount)}` : "未使用"}</span>
+                </div>
+                <button class="btn ghost" id="openCouponModalBtn" type="button" style="width:100%;">选择优惠券</button>
+            </div>
+            <div class="summary-row"><span>优惠券</span><strong>-${formatMoney(discount).replace("¥", "¥")}</strong></div>
+            <div class="summary-row"><span>先付后享</span><strong>可在支付页选择</strong></div>
+            <div class="checkout-total"><strong>${formatMoney(payableAmount())}</strong><span>共减 ${formatMoney(discount)}</span></div>
+            <button class="btn primary" id="submitBtn" style="width:100%;margin-top:18px;" ${count ? "" : "disabled"}>提交订单</button>
+        `;
+        $("#openCouponModalBtn")?.addEventListener("click", openCouponModal);
+        $("#submitBtn")?.addEventListener("click", submitOrder);
+    }
+
+    function openCouponModal() {
+        renderCouponModal();
+        $("#couponModal").classList.add("show");
+    }
+
+    function closeCouponModal() {
+        $("#couponModal").classList.remove("show");
+    }
+
+    function renderCouponModal() {
+        const amount = subtotal();
+        const unused = userCoupons.filter(item => item.status === "UNUSED");
+        $("#couponChannel").innerHTML = `
+            <div class="coupon-rule">叠加规则：平台券最多 1 张，品类券和单品券各可叠加 1 张，系统会在提交订单时再次校验。</div>
+            <div class="coupon-claim" id="couponClaim">正在读取领券渠道...</div>
+        `;
+        loadClaimChannels();
+        $("#couponModalList").innerHTML = `
+            <button class="coupon-card ${!selectedCouponCodes.length ? "active" : ""}" type="button" data-clear-coupons="1">
+                <strong>不使用优惠券</strong>
+                <span>清空已选优惠券</span>
+            </button>
+            ${unused.length ? unused.map(coupon => {
+                const threshold = Number(coupon.thresholdAmount || 0);
+                const disabled = amount < threshold || !couponApplicable(coupon) || !canToggleCoupon(coupon);
+                const selected = selectedCouponCodes.includes(coupon.couponCode);
+                const scopeName = coupon.productId ? "单品券" : coupon.categoryId ? "品类券" : "平台券";
+                return `<button class="coupon-card ${selected ? "active" : ""}" type="button" data-coupon="${escapeHtml(coupon.couponCode)}" ${disabled ? "disabled" : ""}>
+                    <strong>${escapeHtml(coupon.title)}</strong>
+                    <span>${scopeName} · ${disabled ? disabledCouponText(coupon, amount) : `满 ${formatMoney(threshold)} 减 ${formatMoney(coupon.discountAmount)}`}</span>
+                </button>`;
+            }).join("") : `<div class="empty-inline">暂无可用优惠券，系统会在启动时给测试用户发放演示券。</div>`}
+        `;
+        $$("#couponModalList .coupon-card").forEach(button => {
+            button.addEventListener("click", () => {
+                if (button.dataset.clearCoupons) {
+                    selectedCouponCodes = [];
+                } else {
+                    const code = button.dataset.coupon;
+                    selectedCouponCodes = selectedCouponCodes.includes(code)
+                        ? selectedCouponCodes.filter(item => item !== code)
+                        : [...selectedCouponCodes, code];
+                }
+                renderSummary();
+                renderCouponModal();
+            });
+        });
+    }
+
+    function disabledCouponText(coupon, amount) {
+        const threshold = Number(coupon.thresholdAmount || 0);
+        if (amount < threshold) return `还差 ${formatMoney(threshold - amount)} 可用`;
+        if (!couponApplicable(coupon)) return "当前商品不适用";
+        return "同类型已选，不能叠加";
+    }
+
+    async function loadClaimChannels() {
+        try {
+            const active = await apiRequest("/coupon/active") || [];
+            const owned = new Set(userCoupons.map(item => item.couponCode));
+            const claimable = active.filter(item => !owned.has(item.code)).slice(0, 4);
+            $("#couponClaim").innerHTML = claimable.length ? claimable.map(item => `
+                <button class="claim-chip" type="button" data-claim="${escapeHtml(item.code)}">
+                    领 ${escapeHtml(item.title)}
+                </button>
+            `).join("") : `<span>今日可领渠道已领取完毕</span>`;
+            $$("#couponClaim [data-claim]").forEach(button => {
+                button.addEventListener("click", async () => {
+                    userCoupons = await apiRequest("/coupon/claim", {
+                        method: "POST",
+                        body: JSON.stringify({ code: button.dataset.claim })
+                    }) || [];
+                    toast("领取成功", "success");
+                    renderCouponModal();
+                });
+            });
+        } catch (error) {
+            $("#couponClaim").innerHTML = `<span>领券渠道加载失败：${escapeHtml(error.message)}</span>`;
+        }
+    }
+
+    async function submitOrder() {
+        const receiver = currentReceiver();
+        if (!receiver.receiverName) return toast("请填写收货人姓名", "error");
+        if (!receiver.receiverPhone) return toast("请填写手机号", "error");
+        if (!receiver.address) return toast("请填写收货地址", "error");
+        try {
+            $("#submitBtn").disabled = true;
+            await apiRequest("/user/me", {
+                method: "PUT",
+                body: JSON.stringify({ address: receiver.address })
+            });
+            let order;
+            if (checkoutMode === "buyNow") {
+                const item = preview.items[0];
+                order = await apiRequest("/order", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        productId: Number(item.productId),
+                        quantity: Number(item.quantity || 1),
+                        couponCodes: selectedCouponCodes,
+                        ...receiver
+                    })
+                });
+                sessionStorage.removeItem("checkout.buyNow");
+            } else {
+                order = await apiRequest("/order/checkout", {
+                    method: "POST",
+                    body: JSON.stringify({ cartItemIds: checkoutIds, couponCodes: selectedCouponCodes, ...receiver })
+                });
+                sessionStorage.removeItem("checkout.cartItemIds");
+            }
+            location.href = `/pay-select.html?orderId=${order.id}`;
+        } catch (error) {
+            toast(`提交失败：${error.message}`, "error");
+            $("#submitBtn").disabled = false;
+        }
+    }
+
+    async function init() {
+        if (!requireLogin()) return;
+        await renderHeader("cart");
+        renderAddressBook();
+        $("#toggleAddressBtn").addEventListener("click", () => {
+            addressExpanded = !addressExpanded;
+            renderAddressBook();
+        });
+        $("#openAddressModalBtn").addEventListener("click", openAddressModal);
+        $("#closeAddressModalBtn").addEventListener("click", closeAddressModal);
+        $("#addressModal").addEventListener("click", event => {
+            if (event.target === $("#addressModal")) closeAddressModal();
+        });
+        $("#closeCouponModalBtn").addEventListener("click", closeCouponModal);
+        $("#couponModal").addEventListener("click", event => {
+            if (event.target === $("#couponModal")) closeCouponModal();
+        });
+        $("#addressModalForm").addEventListener("submit", event => {
+            event.preventDefault();
+            saveAddress({
+                receiverName: $("#modalReceiverName").value.trim(),
+                receiverPhone: $("#modalReceiverPhone").value.trim(),
+                address: $("#modalAddress").value.trim()
+            });
+        });
+        $("#settleItems").innerHTML = loading("正在生成结算单...");
+        try {
+            const user = await apiRequest("/user/me");
+            userCoupons = await apiRequest("/coupon/mine") || [];
+            $("#userName").textContent = user ? `${user.nickName || user.username} 的收货信息` : "请填写收货信息";
+            fillReceiver({ receiverName: user?.nickName || user?.username || "", receiverPhone: "", address: user?.address || "" });
+
+            const buyNow = readBuyNow();
+            if (buyNow) {
+                checkoutMode = "buyNow";
+                const product = await apiRequest(`/product/${buyNow.productId}`);
+                preview = {
+                    items: [{
+                        productId: product.id,
+                        productName: product.name,
+                        productCoverImage: product.productCoverImage || product.coverImage || buyNow.productCoverImage,
+                        unitPrice: product.price,
+                        categoryId: product.categoryId,
+                        stock: product.stock || buyNow.stock || 1,
+                        quantity: Number(buyNow.quantity || 1)
+                    }],
+                    totalAmount: Number(product.price || 0) * Number(buyNow.quantity || 1)
+                };
+            } else {
+                checkoutIds = readCheckoutIds();
+                if (!checkoutIds.length) {
+                    const cart = await apiRequest("/cart") || [];
+                    checkoutIds = cart.map(item => Number(item.id));
+                }
+                preview = await apiRequest("/cart/preview", {
+                    method: "POST",
+                    body: JSON.stringify({ cartItemIds: checkoutIds })
+                });
+            }
+            recalc();
+        } catch (error) {
+            $("#settleItems").innerHTML = emptyState("结算失败", error.message);
+            $("#settleSummary").innerHTML = "";
+        }
+    }
+
+    init();
+</script>
+</body>
+</html>

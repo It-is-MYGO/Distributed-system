@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 收银台</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body>
+<main class="page cashier-page">
+    <section class="cashier-shell">
+        <div class="panel-body">
+            <div class="empty-state">
+                <div class="loader"></div>
+                <p>正在进入统一收银台...</p>
+            </div>
+        </div>
+    </section>
+</main>
+<script>
+    const params = new URLSearchParams(location.search);
+    const orderId = params.get("orderId") || "";
+    location.replace(`/pay-select.html${orderId ? `?orderId=${encodeURIComponent(orderId)}` : ""}`);
+</script>
+</body>
+</html>

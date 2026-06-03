@@ -1,0 +1,137 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 个人中心</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="personal">
+<header class="site-header" id="siteHeader"></header>
+<main class="page">
+    <div class="section-head">
+        <div>
+            <h2>个人中心</h2>
+            <p>维护昵称、签名和默认收货地址，结算时会自动带出。</p>
+        </div>
+        <a class="btn ghost" href="/orders.html">我的订单</a>
+    </div>
+    <section class="personal-layout">
+        <div class="panel">
+            <div class="panel-body">
+                <h3 style="margin-top:0;">我的资料</h3>
+            </div>
+            <div id="profileCards"></div>
+        </div>
+        <aside class="panel summary">
+            <h3 style="margin-top:0;">编辑资料</h3>
+            <form id="profileForm" class="auth-form">
+                <div class="field">
+                    <label for="nickName">昵称</label>
+                    <input id="nickName" placeholder="请输入昵称">
+                </div>
+                <div class="field">
+                    <label for="introduceSign">个性签名</label>
+                    <input id="introduceSign" placeholder="请输入个性签名">
+                </div>
+                <div class="field">
+                    <label for="avatarUrl">头像地址</label>
+                    <input id="avatarUrl" placeholder="请输入头像 URL">
+                </div>
+                <div class="avatar-presets" id="avatarPresets"></div>
+                <div class="field">
+                    <label for="address">默认收货地址</label>
+                    <textarea id="address" rows="4" placeholder="省市区、街道、门牌号"></textarea>
+                </div>
+                <button class="btn primary" type="submit">保存资料</button>
+            </form>
+        </aside>
+    </section>
+</main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, $$, apiRequest, avatarFor, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader } = AppCommon;
+    let currentUser = null;
+    const avatarSeeds = ["student", "flash", "buyer", "seckill", "admin"];
+
+    function renderProfile(user) {
+        $("#profileCards").innerHTML = `
+            <div class="profile-hero">
+                <img class="avatar avatar-lg" id="profileAvatar" src="${escapeHtml(avatarFor(user))}" alt="${escapeHtml(user.nickName || user.username || "用户头像")}">
+                <div>
+                    <h3>${escapeHtml(user.nickName || user.username || "未设置昵称")}</h3>
+                    <p>${escapeHtml(user.introduceSign || "欢迎来到分布式秒杀系统。")}</p>
+                </div>
+            </div>
+            <div class="profile-options">
+                <div class="profile-card"><strong>账号</strong><span>${escapeHtml(user.username || "未设置")}</span></div>
+                <div class="profile-card"><strong>角色</strong><span>${escapeHtml(user.role || "USER")}</span></div>
+                <div class="profile-card"><strong>头像</strong><span>${escapeHtml(user.avatarUrl || "使用默认头像")}</span></div>
+                <div class="profile-card"><strong>默认地址</strong><span>${escapeHtml(user.address || "未设置")}</span></div>
+            </div>
+        `;
+        $("#nickName").value = user.nickName || "";
+        $("#introduceSign").value = user.introduceSign || "";
+        $("#avatarUrl").value = user.avatarUrl || "";
+        $("#address").value = user.address || "";
+        renderAvatarPresets(user.avatarUrl);
+    }
+
+    function renderAvatarPresets(activeUrl = "") {
+        $("#avatarPresets").innerHTML = avatarSeeds.map(seed => {
+            const url = `https://api.dicebear.com/8.x/thumbs/svg?seed=${seed}`;
+            return `<button class="avatar-preset ${url === activeUrl ? "active" : ""}" type="button" data-url="${escapeHtml(url)}"><img class="avatar" src="${escapeHtml(url)}" alt="头像 ${seed}"></button>`;
+        }).join("");
+        $$(".avatar-preset").forEach(button => {
+            button.addEventListener("click", () => {
+                $("#avatarUrl").value = button.dataset.url;
+                $$(".avatar-preset").forEach(item => item.classList.toggle("active", item === button));
+                $("#profileAvatar").src = button.dataset.url;
+            });
+        });
+    }
+
+    async function loadProfile() {
+        $("#profileCards").innerHTML = loading("正在读取资料...");
+        try {
+            currentUser = await apiRequest("/user/me");
+            renderProfile(currentUser || {});
+        } catch (error) {
+            $("#profileCards").innerHTML = emptyState("资料加载失败", error.message);
+        }
+    }
+
+    async function init() {
+        if (!requireLogin()) return;
+        await renderHeader("personal");
+        $("#avatarUrl").addEventListener("input", () => {
+            const value = $("#avatarUrl").value.trim();
+            if (value && $("#profileAvatar")) $("#profileAvatar").src = value;
+        });
+        $("#profileForm").addEventListener("submit", async event => {
+            event.preventDefault();
+            try {
+                await apiRequest("/user/me", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                        nickName: $("#nickName").value.trim(),
+                        introduceSign: $("#introduceSign").value.trim(),
+                        avatarUrl: $("#avatarUrl").value.trim(),
+                        address: $("#address").value.trim()
+                    })
+                });
+                toast("资料已保存", "success");
+                await loadProfile();
+                await renderHeader("personal");
+            } catch (error) {
+                toast(`保存失败：${error.message}`, "error");
+            }
+        });
+        loadProfile();
+    }
+
+    init();
+</script>
+</body>
+</html>
+

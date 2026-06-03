@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 商品详情</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="shop">
+<header class="site-header" id="siteHeader"></header>
+<main class="page" id="detailRoot"></main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, $$, apiRequest, formatMoney, productImage, avatarFor, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader } = AppCommon;
+
+    function productId() {
+        return new URLSearchParams(location.search).get("productId");
+    }
+
+    function imagesByType(images, type) {
+        return (images || [])
+            .filter(item => String(item.imageType || "").toUpperCase() === type)
+            .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+            .map(item => item.imageUrl)
+            .filter(Boolean);
+    }
+
+    function galleryImages(product, dbImages) {
+        const images = [productImage(product), ...imagesByType(dbImages, "GALLERY")];
+        if (product.carouselImages) {
+            try {
+                const parsed = JSON.parse(product.carouselImages);
+                if (Array.isArray(parsed)) images.push(...parsed);
+            } catch {
+                images.push(...String(product.carouselImages).split(","));
+            }
+        }
+        return [...new Set(images.map(item => item && item.trim()).filter(Boolean))].slice(0, 8);
+    }
+
+    function stars(rating = 5) {
+        const count = Math.max(1, Math.min(5, Number(rating) || 5));
+        return "★★★★★".slice(0, count);
+    }
+
+    function reviewType(rating = 5) {
+        const value = Number(rating) || 5;
+        if (value >= 4) return "good";
+        if (value === 3) return "middle";
+        return "bad";
+    }
+
+    function reviewLabel(type) {
+        return { good: "好评", middle: "中评", bad: "差评" }[type] || "全部";
+    }
+
+    function seckillText(product) {
+        if (!product.seckillEndAt || !product.seckillPrice) return "";
+        const end = new Date(product.seckillEndAt).getTime();
+        const start = product.seckillStartAt ? new Date(product.seckillStartAt).getTime() : 0;
+        const now = Date.now();
+        if (now < start) return "秒杀即将开始";
+        if (now >= end) return "秒杀已结束，已恢复原价";
+        const totalSeconds = Math.max(0, Math.floor((end - now) / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `限时秒杀剩余 ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    async function addToCart(id) {
+        if (!requireLogin({ afterLogin: () => addToCart(id) })) return false;
+        try {
+            await apiRequest("/cart", {
+                method: "POST",
+                body: JSON.stringify({ productId: Number(id), quantity: 1 })
+            });
+            toast("已加入购物车", "success");
+            renderHeader("shop");
+            return true;
+        } catch (error) {
+            toast(`添加失败：${error.message}`, "error");
+            return false;
+        }
+    }
+
+    async function buyNow(product) {
+        if (!requireLogin({ afterLogin: () => buyNow(product) })) return;
+        sessionStorage.setItem("checkout.buyNow", JSON.stringify({
+            productId: Number(product.id),
+            productName: product.name,
+            productCoverImage: productImage(product),
+            unitPrice: Number(product.price || 0),
+            stock: Number(product.stock || 0),
+            quantity: 1
+        }));
+        sessionStorage.removeItem("checkout.cartItemIds");
+        location.href = "/order-settle.html?mode=buyNow";
+    }
+
+    function renderDetail(product, dbImages = [], dbReviews = []) {
+        const id = product.id;
+        const stock = Number(product.stock || 0);
+        const images = galleryImages(product, dbImages);
+        const detailImages = imagesByType(dbImages, "DETAIL");
+        const reviewCount = dbReviews.length;
+        const counts = dbReviews.reduce((map, item) => {
+            map[reviewType(item.rating)] += 1;
+            return map;
+        }, { good: 0, middle: 0, bad: 0 });
+        const percent = (value) => reviewCount ? Math.round(value / reviewCount * 100) : 0;
+        const goodRate = percent(counts.good);
+        const oldPrice = Number(product.price || 0) * 1.18;
+        const sales = Number(product.salesCount || 0);
+        const rank = Number(product.categorySalesRank || 0);
+        const stockTag = stock <= 20 ? "即将售罄" : sales >= 2600 ? "热卖爆款" : "稳定供货";
+        const hasSeckillMeta = product.seckillPrice && product.seckillEndAt;
+        $("#detailRoot").innerHTML = `
+            <section class="panel">
+                <div class="panel-body detail-layout">
+                    <div class="gallery">
+                        <div class="gallery-frame">
+                            <button class="gallery-arrow left" type="button" data-gallery-prev aria-label="上一张">‹</button>
+                            <img class="gallery-main" id="mainImage" src="${escapeHtml(images[0])}" alt="${escapeHtml(product.name)}">
+                            <button class="gallery-arrow right" type="button" data-gallery-next aria-label="下一张">›</button>
+                            <span class="gallery-page" id="galleryPage">1 / ${images.length}</span>
+                        </div>
+                        <div class="gallery-thumbs">
+                            ${images.map((image, index) => `<button class="gallery-thumb ${index === 0 ? "active" : ""}" type="button" data-index="${index}"><img src="${escapeHtml(image)}" alt="${escapeHtml(product.name)} 图片 ${index + 1}"></button>`).join("")}
+                        </div>
+                    </div>
+                    <div class="detail-info">
+                        <p class="eyebrow" style="color:var(--brand);">${escapeHtml(product.tag || "限时秒杀")}</p>
+                        <h1>${escapeHtml(product.name)}</h1>
+                        <p>${escapeHtml(product.description || "暂无详细介绍。")}</p>
+                        <div class="price-box">
+                            <div><span class="label">秒杀价</span><strong class="money" style="font-size:36px;">${formatMoney(product.price)}</strong></div>
+                            <div style="margin-top:8px;color:var(--muted);"><span class="label">市场价</span><del>${formatMoney(oldPrice)}</del></div>
+                            ${hasSeckillMeta ? `<div class="seckill-countdown detail-countdown" id="detailCountdown">${escapeHtml(seckillText(product))}</div>` : ""}
+                        </div>
+                        <div class="promo-grid">
+                            <div class="promo-card"><strong>秒杀保障</strong>并发下单校验，防止超卖</div>
+                            <div class="promo-card"><strong>配送服务</strong>默认包邮，48 小时内发货</div>
+                            <div class="promo-card"><strong>售后承诺</strong>7 天无理由退换</div>
+                        </div>
+                        <div class="spec-list">
+                            <div><span>商品状态</span><strong>${stockTag}</strong></div>
+                            <div><span>销量</span><strong>${sales} 件</strong></div>
+                            <div><span>好评率</span><strong>99%</strong></div>
+                            <div><span>榜单</span><strong>${rank ? `品类销量第 ${rank}` : "精选好物"}</strong></div>
+                        </div>
+                        <div class="hero-actions">
+                            <button class="btn ghost" id="cartBtn" ${stock <= 0 ? "disabled" : ""}>加入购物车</button>
+                            <button class="btn primary" id="buyBtn" ${stock <= 0 ? "disabled" : ""}>立即购买</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section panel">
+                <div class="panel-body detail-tabs">
+                    <div class="section-head">
+                        <div>
+                            <h2>商品介绍</h2>
+                            <p>详情图、商品文案和评价均来自后端数据库接口。</p>
+                        </div>
+                    </div>
+                    <p style="color:var(--muted);line-height:1.9;">${escapeHtml(product.description || "该商品已接入商品服务、购物车服务和订单服务，可用于演示秒杀场景下的订单创建。")}</p>
+                    <div class="promo-grid">
+                        <div class="promo-card"><strong>系统架构</strong>用户服务、商品服务、库存服务、订单服务</div>
+                        <div class="promo-card"><strong>接口风格</strong>RESTful API + JWT 登录认证</div>
+                        <div class="promo-card"><strong>秒杀能力</strong>并发校验、订单落库、状态追踪</div>
+                    </div>
+                    <div class="detail-long-images">
+                        ${detailImages.length ? detailImages.map((image, index) => `<img class="detail-long-image" src="${escapeHtml(image)}" alt="${escapeHtml(product.name)} 详情图 ${index + 1}">`).join("") : `<div class="empty-inline">暂无详情长图，已展示商品描述。</div>`}
+                    </div>
+                </div>
+            </section>
+
+            <section class="section panel">
+                <div class="panel-body">
+                    <div class="section-head">
+                        <div>
+                            <h2>用户评价</h2>
+                            <p>共 ${reviewCount} 条评价，好评率 ${reviewCount ? `${goodRate}%` : "-"}。</p>
+                        </div>
+                        <span class="stars">★★★★★</span>
+                    </div>
+                    <div class="review-summary">
+                        <div class="review-score"><strong>${reviewCount ? `${goodRate}%` : "-"}</strong><span>综合好评率</span></div>
+                        <div class="review-bars">
+                            ${["good", "middle", "bad"].map(type => `
+                                <div class="review-bar">
+                                    <span>${reviewLabel(type)}</span>
+                                    <div class="review-track"><div class="review-fill" style="width:${percent(counts[type])}%;"></div></div>
+                                    <strong>${percent(counts[type])}%</strong>
+                                </div>
+                            `).join("")}
+                        </div>
+                    </div>
+                    <div class="review-filters">
+                        <button class="tab active" type="button" data-review-filter="all">全部 ${reviewCount}</button>
+                        <button class="tab" type="button" data-review-filter="good">好评 ${counts.good}</button>
+                        <button class="tab" type="button" data-review-filter="middle">中评 ${counts.middle}</button>
+                        <button class="tab" type="button" data-review-filter="bad">差评 ${counts.bad}</button>
+                    </div>
+                    <div class="review-list">
+                        ${dbReviews.length ? dbReviews.map(item => `
+                            <article class="review-item" data-review-type="${reviewType(item.rating)}">
+                                <img class="avatar" src="${escapeHtml(avatarFor(item, item.username))}" alt="${escapeHtml(item.username || "用户头像")}">
+                                <div class="review-content">
+                                    <div class="review-head"><strong>${escapeHtml(item.username)}</strong><span class="stars">${stars(item.rating)}</span></div>
+                                    <p style="margin:0;color:var(--muted);line-height:1.8;">${escapeHtml(item.content)}</p>
+                                </div>
+                            </article>
+                        `).join("") : `<div class="empty-inline">暂无评价。</div>`}
+                    </div>
+                </div>
+            </section>
+        `;
+
+        let activeIndex = 0;
+        function setImage(index) {
+            activeIndex = (index + images.length) % images.length;
+            $("#mainImage").src = images[activeIndex];
+            $("#galleryPage").textContent = `${activeIndex + 1} / ${images.length}`;
+            $$(".gallery-thumb").forEach((item, current) => item.classList.toggle("active", current === activeIndex));
+        }
+        $$(".gallery-thumb").forEach(thumb => thumb.addEventListener("click", () => setImage(Number(thumb.dataset.index))));
+        $("[data-gallery-prev]")?.addEventListener("click", () => setImage(activeIndex - 1));
+        $("[data-gallery-next]")?.addEventListener("click", () => setImage(activeIndex + 1));
+        if (images.length > 1) {
+            setInterval(() => setImage(activeIndex + 1), 3600);
+        }
+        if (hasSeckillMeta) {
+            setInterval(() => {
+                const node = $("#detailCountdown");
+                if (node) node.textContent = seckillText(product);
+            }, 1000);
+        }
+        $("#cartBtn")?.addEventListener("click", () => addToCart(id));
+        $("#buyBtn")?.addEventListener("click", () => buyNow(product));
+        $$("[data-review-filter]").forEach(button => {
+            button.addEventListener("click", () => {
+                const filter = button.dataset.reviewFilter;
+                $$("[data-review-filter]").forEach(item => item.classList.toggle("active", item === button));
+                $$(".review-item").forEach(item => {
+                    item.style.display = filter === "all" || item.dataset.reviewType === filter ? "grid" : "none";
+                });
+            });
+        });
+    }
+
+    async function loadDetail() {
+        await renderHeader("shop");
+        const id = productId();
+        if (!id) {
+            $("#detailRoot").innerHTML = emptyState("缺少商品 ID", "请从商品列表进入详情页。");
+            return;
+        }
+        $("#detailRoot").innerHTML = loading("正在加载商品详情...");
+        try {
+            const [product, dbImages, dbReviews] = await Promise.all([
+                apiRequest(`/product/${id}`),
+                apiRequest(`/product/${id}/images`),
+                apiRequest(`/product/${id}/reviews`)
+            ]);
+            renderDetail(product, dbImages || [], dbReviews || []);
+        } catch (error) {
+            $("#detailRoot").innerHTML = emptyState("详情加载失败", error.message, '<a class="btn primary" href="/shop.html">返回首页</a>');
+        }
+    }
+
+    loadDetail();
+</script>
+</body>
+</html>

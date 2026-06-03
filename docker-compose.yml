@@ -5,6 +5,9 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root123
       MYSQL_DATABASE: distributed_system
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     ports:
       - "3307:3306"
     volumes:
@@ -18,8 +21,43 @@ services:
   redis:
     image: redis:7.2
     container_name: ds-redis
+
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: ds-nacos
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      JVM_XMN: 128m
     ports:
-      - "6379:6379"
+      - "8849:8848"
+      - "9849:9848"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: ds-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: ds-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
 
   app1:
     build:
@@ -30,10 +68,14 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8081
       INSTANCE_ID: app-1
+      INSTANCE_WORKER_ID: 1
+      NACOS_SERVER_ADDR: nacos:8848
     depends_on:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_started
+      nacos:
         condition: service_started
 
   app2:
@@ -45,10 +87,14 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8082
       INSTANCE_ID: app-2
+      INSTANCE_WORKER_ID: 2
+      NACOS_SERVER_ADDR: nacos:8848
     depends_on:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_started
+      nacos:
         condition: service_started
 
   nginx:
@@ -57,8 +103,8 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/html:/usr/share/nginx/html:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./frontend:/usr/share/nginx/html
     depends_on:
       - app1
       - app2

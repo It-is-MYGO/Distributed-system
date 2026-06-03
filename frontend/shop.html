@@ -1,0 +1,173 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 商城首页</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="shop">
+<header class="site-header" id="siteHeader"></header>
+<main class="page home-layout-page">
+    <section class="home-showcase">
+        <aside class="home-category">
+            <h2>分类</h2>
+            <div class="category-line"><span>☰</span><a href="/search.html?keyword=冰洗">冰洗</a><em>/</em><a href="/search.html?keyword=空调">空调</a><em>/</em><a href="/search.html?keyword=电视">电视</a><em>/</em><a href="/search.html?keyword=厨卫大电">厨卫大电</a></div>
+            <div class="category-line"><span>▣</span><a href="/search.html?keyword=电脑">电脑</a><em>/</em><a href="/search.html?keyword=办公">办公</a><em>/</em><a href="/search.html?keyword=文具">文具用品</a></div>
+            <div class="category-line"><span>▯</span><a href="/search.html?keyword=手机">手机</a><em>/</em><a href="/search.html?keyword=运营商">运营商</a><em>/</em><a href="/search.html?keyword=数码">数码</a></div>
+            <div class="category-line"><span>☷</span><a href="/search.html?keyword=生活电器">生活电器</a><em>/</em><a href="/search.html?keyword=厨房小电">厨房小电</a><em>/</em><a href="/search.html?keyword=个护健康">个护健康</a></div>
+            <div class="category-line"><span>♡</span><a href="/search.html?keyword=食品">食品</a><em>/</em><a href="/search.html?keyword=酒类">酒类</a><em>/</em><a href="/search.html?keyword=生鲜">生鲜</a><em>/</em><a href="/search.html?keyword=特产">特产</a></div>
+            <div class="category-line"><span>♧</span><a href="/search.html?keyword=美妆">美妆</a><em>/</em><a href="/search.html?keyword=个护清洁">个护清洁</a><em>/</em><a href="/search.html?keyword=宠物">宠物</a></div>
+            <div class="category-line"><span>☰</span><a href="/search.html?keyword=元器件">元器件</a><em>/</em><a href="/search.html?keyword=劳保物资">劳保物资</a><em>/</em><a href="/search.html?keyword=五金机电">五金机电</a></div>
+            <div class="category-line"><span>☰</span><a href="/search.html?keyword=家装">家装</a><em>/</em><a href="/search.html?keyword=建材">建材</a><em>/</em><a href="/search.html?keyword=家具">家具</a></div>
+            <div class="category-line"><span>☰</span><a href="/search.html?keyword=家居日用">家居日用</a><em>/</em><a href="/search.html?keyword=厨具">厨具</a></div>
+            <div class="category-line"><span>▰</span><a href="/search.html?keyword=男鞋">男鞋</a><em>/</em><a href="/search.html?keyword=运动">运动</a><em>/</em><a href="/search.html?keyword=户外">户外</a></div>
+            <div class="category-line"><span>♙</span><a href="/search.html?keyword=男装">男装</a><em>/</em><a href="/search.html?keyword=女装">女装</a><em>/</em><a href="/search.html?keyword=童装">童装</a><em>/</em><a href="/search.html?keyword=内衣">内衣</a></div>
+        </aside>
+
+        <div class="home-banner" id="homeBanner">
+            <div class="banner-copy">
+                <p>分布式秒杀系统</p>
+                <h1 id="bannerTitle">电脑全系性能巅峰<br>工作娱乐畅享无忧</h1>
+                <strong id="bannerSub">商品服务 · 订单服务 · Kafka 秒杀</strong>
+            </div>
+            <div class="banner-products" id="bannerProducts"></div>
+            <button class="banner-arrow left" type="button" id="bannerPrev" aria-label="上一张">‹</button>
+            <button class="banner-arrow right" type="button" id="bannerNext" aria-label="下一张">›</button>
+            <div class="banner-dots" id="bannerDots"></div>
+        </div>
+
+        <aside class="home-side-promos">
+            <a class="side-promo green" href="/search.html?keyword=补贴"><strong>国家补贴<br>惠享正品</strong><img id="promoImgA" alt=""></a>
+            <a class="side-promo purple" href="/search.html?keyword=美妆"><strong>精致美妆<br>品质之选</strong><img id="promoImgB" alt=""></a>
+            <a class="side-promo blue" href="/search.html?keyword=百货"><strong>超值百货<br>省心省钱</strong><img id="promoImgC" alt=""></a>
+            <a class="side-promo yellow" href="/search.html?keyword=五金"><strong>品质五金<br>超值特惠</strong><img id="promoImgD" alt=""></a>
+        </aside>
+    </section>
+
+    <section class="recommend-panel">
+        <div class="recommend-head">
+            <h2><span>♙</span> 为你推荐</h2>
+            <div>
+                <strong id="productMetric">0</strong> 件商品
+            </div>
+        </div>
+        <div class="recommend-grid" id="productGrid">${""}</div>
+    </section>
+</main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, apiRequest, formatMoney, productImage, escapeHtml, bindAddToCart, loading, emptyState, renderHeader } = AppCommon;
+
+    function homeProductCard(product, index = 0) {
+        const stock = Number(product.stock || 0);
+        const badge = index % 2 === 0 ? "自营" : "秒杀";
+        const coupon = product.couponText || "商品好评率98%";
+        const sales = Number(product.salesCount || 0);
+        const rank = Number(product.categorySalesRank || 0);
+        const hotTag = sales >= 2600 ? "热卖" : stock <= 20 ? "即将售罄" : rank && rank <= 2 ? "榜单好物" : "精选";
+        const seckill = seckillText(product);
+        return `
+            <article class="recommend-card">
+                <a class="recommend-media" href="/detail.html?productId=${product.id}">
+                    <img src="${escapeHtml(productImage(product, index))}" alt="${escapeHtml(product.name || "商品图片")}">
+                </a>
+                <a class="recommend-name" href="/detail.html?productId=${product.id}"><span>${badge}</span>${escapeHtml(product.name || "未命名商品")}</a>
+                <div class="recommend-tags"><span>${escapeHtml(hotTag)}</span><span>${escapeHtml(coupon)}</span></div>
+                ${seckill ? `<div class="seckill-countdown">${escapeHtml(seckill)}</div>` : ""}
+                <div class="recommend-sales"><span>已售 ${sales} 件</span>${rank ? `<strong>品类销量第 ${rank}</strong>` : ""}</div>
+                <div class="recommend-price">
+                    <strong>${formatMoney(product.price)}</strong>
+                    <button class="add-plus js-add-cart" type="button" data-id="${product.id}" ${stock <= 0 ? "disabled" : ""} aria-label="加入购物车">+</button>
+                </div>
+            </article>
+        `;
+    }
+
+    function seckillText(product) {
+        if (!product.seckillEndAt || !product.seckillPrice) return "";
+        const end = new Date(product.seckillEndAt).getTime();
+        const start = product.seckillStartAt ? new Date(product.seckillStartAt).getTime() : 0;
+        const now = Date.now();
+        if (now < start || now >= end) return "";
+        const minutes = Math.max(0, Math.floor((end - now) / 60000));
+        return `限时秒杀剩余 ${minutes} 分钟`;
+    }
+
+    let bannerSlides = [];
+    let bannerIndex = 0;
+    let bannerTimer = null;
+
+    function renderHeroImages(list) {
+        const images = list.length ? list.map((item, index) => productImage(item, index)) : ["mall/image/swiper/banner03.jpg"];
+        bannerSlides = list.slice(0, 5).map((item, index) => ({
+            title: `${escapeHtml(item.name || "精选商品")}<br>限时热卖专场`,
+            sub: `${escapeHtml(item.tag || "精选")} · 已售 ${Number(item.salesCount || 0)} 件 · ${formatMoney(item.price)}`,
+            images: [productImage(item, index), images[(index + 1) % images.length] || productImage(item, index)]
+        }));
+        if (!bannerSlides.length) {
+            bannerSlides = [{ title: "分布式秒杀系统<br>订单链路稳定演示", sub: "商品服务 · 订单服务 · Kafka 秒杀", images: [images[0], images[0]] }];
+        }
+        $("#bannerDots").innerHTML = bannerSlides.map((_, index) => `<button class="${index === 0 ? "active" : ""}" type="button" data-index="${index}" aria-label="切换横幅 ${index + 1}"></button>`).join("");
+        $("#bannerPrev").addEventListener("click", () => {
+            showBanner(bannerIndex - 1);
+            startBannerTimer();
+        });
+        $("#bannerNext").addEventListener("click", () => {
+            showBanner(bannerIndex + 1);
+            startBannerTimer();
+        });
+        $("#bannerDots").addEventListener("click", event => {
+            const dot = event.target.closest("button[data-index]");
+            if (!dot) return;
+            showBanner(Number(dot.dataset.index));
+            startBannerTimer();
+        });
+        showBanner(0);
+        startBannerTimer();
+        ["promoImgA", "promoImgB", "promoImgC", "promoImgD"].forEach((id, index) => {
+            const img = $("#" + id);
+            if (img) img.src = images[(index + 2) % images.length] || images[0];
+        });
+    }
+
+    function showBanner(index) {
+        bannerIndex = (index + bannerSlides.length) % bannerSlides.length;
+        const slide = bannerSlides[bannerIndex];
+        $("#homeBanner").classList.add("is-switching");
+        $("#bannerTitle").innerHTML = slide.title;
+        $("#bannerSub").textContent = slide.sub;
+        $("#bannerProducts").innerHTML = slide.images.map((image, current) => `<img src="${escapeHtml(image)}" alt="轮播商品 ${current + 1}">`).join("");
+        document.querySelectorAll("#bannerDots button").forEach((dot, current) => dot.classList.toggle("active", current === bannerIndex));
+        setTimeout(() => $("#homeBanner")?.classList.remove("is-switching"), 260);
+    }
+
+    function startBannerTimer() {
+        if (bannerTimer) clearInterval(bannerTimer);
+        bannerTimer = setInterval(() => showBanner(bannerIndex + 1), 3200);
+    }
+
+    async function loadHome() {
+        await renderHeader("shop");
+        $("#productGrid").innerHTML = loading("正在加载精选商品...");
+        try {
+            const products = await apiRequest("/product");
+            const list = Array.isArray(products) ? products : [];
+            $("#productMetric").textContent = list.length;
+            if (!list.length) {
+                $("#productGrid").innerHTML = emptyState("暂无商品", "请先在商品管理页添加商品。", '<a class="btn primary" href="/product.html">去添加商品</a>');
+                return;
+            }
+            renderHeroImages(list);
+            $("#productGrid").innerHTML = list.slice(0, 8).map(homeProductCard).join("");
+            bindAddToCart($("#productGrid"));
+        } catch (error) {
+            $("#productGrid").innerHTML = emptyState("商品加载失败", error.message);
+        }
+    }
+
+    loadHome();
+</script>
+</body>
+</html>
+

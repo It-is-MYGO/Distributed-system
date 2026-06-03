@@ -1,0 +1,64 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 注册</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body>
+<main class="auth-page">
+    <section class="auth-visual">
+        <a class="brand" href="/shop.html">
+            <span class="brand-mark">F</span>
+            <span><strong>分布式秒杀系统</strong><small style="color:#c7fff6;">库存秒杀商城</small></span>
+        </a>
+        <div>
+            <p class="eyebrow">New Account</p>
+            <h1>创建账号后即可体验完整商城流程。</h1>
+            <p>注册、登录、浏览商品、加入购物车、结算下单、查看订单，全部围绕作业要求的服务拆分展开。</p>
+        </div>
+    </section>
+    <section class="auth-panel">
+        <h1>会员注册</h1>
+        <p>建议使用手机号或学号作为账号，方便演示。</p>
+        <form class="auth-form" id="registerForm">
+            <div class="field">
+                <label for="loginName">账号 / 手机号</label>
+                <input id="loginName" autocomplete="username" placeholder="请输入账号">
+            </div>
+            <div class="field">
+                <label for="password">密码</label>
+                <input id="password" type="password" autocomplete="new-password" placeholder="至少 6 位">
+            </div>
+            <button class="btn primary" type="submit">注册</button>
+        </form>
+        <p>已有账号？<a style="color:var(--brand);font-weight:800;" href="/index.html">去登录</a></p>
+    </section>
+</main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, apiRequest, setToken, toast } = AppCommon;
+    const redirect = new URLSearchParams(location.search).get("redirect") || "/shop.html";
+    $("#registerForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const username = $("#loginName").value.trim();
+        const password = $("#password").value.trim();
+        if (!username || !password) return toast("请输入账号和密码", "error");
+        if (password.length < 6) return toast("密码至少 6 位", "error");
+        try {
+            const result = await apiRequest("/user/register", {
+                method: "POST",
+                body: JSON.stringify({ username, password })
+            });
+            if (result?.token) setToken(result.token);
+            toast("注册成功", "success");
+            setTimeout(() => location.href = redirect, 700);
+        } catch (error) {
+            toast(`注册失败：${error.message}`, "error");
+        }
+    });
+</script>
+</body>
+</html>
+
