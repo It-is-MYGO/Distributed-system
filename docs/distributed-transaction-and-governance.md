@@ -41,6 +41,16 @@ $admin = Invoke-RestMethod -Uri http://localhost/api/user/login -Method POST -Co
 Invoke-RestMethod -Uri http://localhost/api/governance/service-registry -Headers @{Authorization="Bearer $($admin.token)"}
 ```
 
+Nacos 配置发布与拉取：
+
+```powershell
+$h = @{Authorization="Bearer $($admin.token)"}
+Invoke-RestMethod -Uri http://localhost/api/governance/nacos/publish -Method POST -Headers $h
+Invoke-RestMethod -Uri http://localhost/api/governance/nacos/config -Headers $h
+```
+
+当通过 `/api/governance/config` 修改 `traffic.rate-limit.permits-per-second` 等属性时，后端会同步发布到 Nacos 的 `mall-governance.properties`，并立即影响运行时治理逻辑。
+
 动态路由验证：
 
 ```powershell

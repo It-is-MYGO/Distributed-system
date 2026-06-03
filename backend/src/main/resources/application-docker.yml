@@ -37,6 +37,6 @@ app:
   instance-id: ${INSTANCE_ID:local}
   worker-id: ${INSTANCE_WORKER_ID:1}
   nacos:
-    server-addr: ${NACOS_SERVER_ADDR:nacos:8848}
+    server-addr: ${NACOS_SERVER_ADDR:http://nacos:8848}
   kafka:
     seckill-topic: seckill-orders
