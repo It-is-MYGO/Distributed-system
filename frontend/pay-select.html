@@ -25,14 +25,61 @@
     let order = null;
     let selectedMethod = "BANK";
     let timer = null;
+    const MESSAGE_KEY = "demo.message_box";
+
+    function pushMessage(type, title, content) {
+        try {
+            const saved = JSON.parse(localStorage.getItem(MESSAGE_KEY) || "[]");
+            const messages = Array.isArray(saved) ? saved : [];
+            messages.unshift({ type, title, content, time: new Date().toLocaleString("zh-CN"), read: false });
+            localStorage.setItem(MESSAGE_KEY, JSON.stringify(messages.slice(0, 60)));
+        } catch {
+            localStorage.setItem(MESSAGE_KEY, JSON.stringify([{ type, title, content, time: new Date().toLocaleString("zh-CN"), read: false }]));
+        }
+    }
 
     function query() {
         const params = new URLSearchParams(location.search);
         return { orderId: params.get("orderId") || "" };
     }
 
+    function parseLocalTime(value) {
+        if (!value) return NaN;
+        if (value instanceof Date) return value.getTime();
+        if (Array.isArray(value)) {
+            return new Date(value[0], Number(value[1]) - 1, value[2], value[3] || 0, value[4] || 0, value[5] || 0).getTime();
+        }
+        const text = String(value);
+        if (/[zZ]|[+-]\d{2}:\d{2}$/.test(text)) return new Date(text).getTime();
+        const normalized = text.replace("T", " ");
+        const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (!match) return new Date(text).getTime();
+        return new Date(
+            Number(match[1]),
+            Number(match[2]) - 1,
+            Number(match[3]),
+            Number(match[4]),
+            Number(match[5]),
+            Number(match[6] || 0)
+        ).getTime();
+    }
+
     function expireAt(order) {
-        const created = new Date(order.createdAt).getTime();
+        const submittedAt = Number(sessionStorage.getItem(`checkout.submittedAt:${order.id}`) || 0);
+        if (submittedAt && String(order.status || "").toUpperCase() === "CREATED") {
+            return submittedAt + 15 * 60 * 1000;
+        }
+        if (order.paymentExpiresAtMillis) {
+            return Number(order.paymentExpiresAtMillis);
+        }
+        if (order.paymentSecondsLeft !== undefined && order.paymentSecondsLeft !== null) {
+            return Date.now() + Number(order.paymentSecondsLeft || 0) * 1000;
+        }
+        if (order.paymentExpiresAt) {
+            const deadline = parseLocalTime(order.paymentExpiresAt);
+            if (!Number.isNaN(deadline)) return deadline;
+        }
+        const created = parseLocalTime(order.createdAt);
         return Number.isNaN(created) ? 0 : created + 15 * 60 * 1000;
     }
 
@@ -46,11 +93,19 @@
     function renderCashier() {
         const isPayable = order.status === "CREATED" && expireAt(order) > Date.now();
         $("#cashierBody").innerHTML = `
+            <div class="cashier-hero ${isPayable ? "" : "expired"}">
+                <span>${isPayable ? "待支付" : escapeHtml(mapStatus(order.status))}</span>
+                <div>
+                    <strong>${escapeHtml(order.orderNo || "-")}</strong>
+                    <p>${isPayable ? `请在 <b id="payCountdown">${leftText(order)}</b> 内完成支付，超时订单会自动取消。` : "订单已支付、已取消或已超过支付时限。"}</p>
+                </div>
+                <em>${formatMoney(order.totalAmount)}</em>
+            </div>
             <div class="section-head">
                 <div>
                     <p class="eyebrow" style="color:var(--brand);">${escapeHtml(mapStatus(order.status))}</p>
                     <h2>${isPayable ? "选择支付方式" : "订单不可支付"}</h2>
-                    <p>${isPayable ? `请在 15 分钟内完成支付，剩余 <strong id="payCountdown">${leftText(order)}</strong>` : "订单已支付或已超过支付时限，可返回订单查看状态。"}</p>
+                    <p>${isPayable ? "选择一种支付方式后点击立即支付。" : "订单已支付或已超过支付时限，可返回订单查看状态。"}</p>
                 </div>
                 <strong class="money">${formatMoney(order.totalAmount)}</strong>
             </div>
@@ -81,6 +136,41 @@
         startCountdown();
     }
 
+    function renderLeaveHold() {
+        const isPayable = order.status === "CREATED" && expireAt(order) > Date.now();
+        $("#cashierBody").innerHTML = `
+            <div class="pending-pay-card">
+                <span class="pending-icon">!</span>
+                <h2>订单仍在待支付</h2>
+                <p>订单会保留 15 分钟，剩余 <strong id="payCountdown">${leftText(order)}</strong>。你可以继续支付或去订单详情查看。</p>
+                <div class="summary-row"><span>订单号</span><strong>${escapeHtml(order.orderNo || "-")}</strong></div>
+                <div class="summary-row"><span>应付金额</span><strong class="money">${formatMoney(order.totalAmount)}</strong></div>
+                <div class="toolbar" style="margin-top:18px;">
+                    ${isPayable ? `<button class="btn primary" id="continuePayBtn" type="button">继续支付</button>` : ""}
+                    <a class="btn ghost" href="/order-detail.html?orderId=${order.id}">查看订单</a>
+                </div>
+            </div>
+        `;
+        $("#continuePayBtn")?.addEventListener("click", renderCashier);
+        startCountdown();
+    }
+
+    function bindBackGuard() {
+        history.replaceState({ cashierBase: true }, "", location.href);
+        history.pushState({ cashierGuard: true }, "", location.href);
+        window.addEventListener("popstate", () => {
+            if (order?.status !== "CREATED") {
+                setTimeout(() => history.forward(), 0);
+                return;
+            }
+            if (confirm("确认离开吗")) {
+                renderLeaveHold();
+            } else {
+                setTimeout(() => history.forward(), 0);
+            }
+        });
+    }
+
     function startCountdown() {
         if (timer) clearInterval(timer);
         timer = setInterval(async () => {
@@ -102,6 +192,18 @@
 
     async function payNow() {
         const method = PAY_METHODS.find(item => item.code === selectedMethod);
+        if (selectedMethod === "BANK") {
+            location.href = `/bankpay.html?orderId=${order.id}`;
+            return;
+        }
+        if (selectedMethod === "WECHAT") {
+            location.href = `/wxpay.html?orderId=${order.id}`;
+            return;
+        }
+        if (selectedMethod === "ALIPAY") {
+            location.href = `/alipay.html?orderId=${order.id}`;
+            return;
+        }
         try {
             $("#payNowBtn").disabled = true;
             $("#payNowBtn").textContent = `${method.title}处理中...`;
@@ -109,6 +211,9 @@
                 method: "POST",
                 body: JSON.stringify({ payMethod: selectedMethod })
             });
+            sessionStorage.removeItem("checkout.pendingOrderId");
+            pushMessage("order", "订单支付成功提醒", `订单 ${order.orderNo} 已支付 ${formatMoney(order.totalAmount)}。`);
+            pushMessage("logistics", "物流更新提醒", `订单 ${order.orderNo} 已生成物流信息，可在订单详情查看进度。`);
             toast("支付成功，正在返回订单", "success");
             setTimeout(() => location.href = `/order-detail.html?orderId=${order.id}`, 700);
         } catch (error) {
@@ -129,6 +234,7 @@
         $("#cashierBody").innerHTML = loading("正在读取订单...");
         try {
             order = await apiRequest(`/order/${data.orderId}`);
+            bindBackGuard();
             renderCashier();
         } catch (error) {
             $("#cashierBody").innerHTML = emptyState("支付页加载失败", error.message);

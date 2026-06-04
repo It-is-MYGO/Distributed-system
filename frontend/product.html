@@ -63,6 +63,23 @@
                     <button class="btn primary" type="submit">创建优惠券</button>
                 </form>
             </div>
+            <div class="panel-body" style="border-top:1px solid var(--line);">
+                <h3 style="margin-top:0;">通知与活动</h3>
+                <form class="auth-form" id="noticeForm">
+                    <div class="field">
+                        <label for="noticeType">通知类型</label>
+                        <select id="noticeType">
+                            <option value="activity">活动提醒</option>
+                            <option value="coupon">优惠券发放提醒</option>
+                            <option value="order">订单提醒</option>
+                            <option value="logistics">物流提醒</option>
+                        </select>
+                    </div>
+                    <div class="field"><label for="noticeTitle">标题</label><input id="noticeTitle" placeholder="例如 618 秒杀专场开启" required></div>
+                    <div class="field"><label for="noticeContent">内容</label><textarea id="noticeContent" rows="3" placeholder="请输入要推送给用户的消息" required></textarea></div>
+                    <button class="btn primary" type="submit">发布全平台通知</button>
+                </form>
+            </div>
         </aside>
     </section>
 
@@ -100,6 +117,18 @@
 <script>
     const { $, apiRequest, formatMoney, formatDate, escapeHtml, toast, loading, emptyState, renderHeader } = AppCommon;
     let dashboard = null;
+    const MESSAGE_KEY = "demo.message_box";
+
+    function pushMessage(type, title, content) {
+        try {
+            const saved = JSON.parse(localStorage.getItem(MESSAGE_KEY) || "[]");
+            const messages = Array.isArray(saved) ? saved : [];
+            messages.unshift({ type, title, content, time: new Date().toLocaleString("zh-CN"), read: false });
+            localStorage.setItem(MESSAGE_KEY, JSON.stringify(messages.slice(0, 80)));
+        } catch {
+            localStorage.setItem(MESSAGE_KEY, JSON.stringify([{ type, title, content, time: new Date().toLocaleString("zh-CN"), read: false }]));
+        }
+    }
 
     function toLocalInput(value) {
         if (!value) return "";
@@ -237,8 +266,15 @@
                 })
             });
             toast("优惠券已创建", "success");
+            pushMessage("coupon", "优惠券发放提醒", `${$("#couponTitle").value.trim()} 已创建，可在结算页领取并使用。`);
             event.target.reset();
             await loadDashboard();
+        });
+        $("#noticeForm").addEventListener("submit", event => {
+            event.preventDefault();
+            pushMessage($("#noticeType").value, $("#noticeTitle").value.trim(), $("#noticeContent").value.trim());
+            toast("全平台通知已发布", "success");
+            event.target.reset();
         });
         await loadDashboard();
     }

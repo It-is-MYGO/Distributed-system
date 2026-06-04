@@ -12,7 +12,7 @@ import java.util.List;
 
 @Mapper
 public interface OrderMapper {
-    @Insert("INSERT INTO orders(order_no, user_id, total_amount, status, receiver_name, receiver_phone, user_address, paid_at, carrier, tracking_no) VALUES(#{orderNo}, #{userId}, #{totalAmount}, #{status}, #{receiverName}, #{receiverPhone}, #{userAddress}, #{paidAt}, #{carrier}, #{trackingNo})")
+    @Insert("INSERT INTO orders(order_no, user_id, total_amount, status, receiver_name, receiver_phone, user_address, paid_at, carrier, tracking_no, created_at) VALUES(#{orderNo}, #{userId}, #{totalAmount}, #{status}, #{receiverName}, #{receiverPhone}, #{userAddress}, #{paidAt}, #{carrier}, #{trackingNo}, #{createdAt})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(OrderEntity order);
 
@@ -37,9 +37,9 @@ public interface OrderMapper {
     @Update("UPDATE orders SET reviewed = 1 WHERE id = #{orderId} AND user_id = #{userId}")
     int markReviewed(@Param("orderId") Long orderId, @Param("userId") Long userId);
 
-    @Update("UPDATE orders SET status = 'CANCELLED' WHERE id = #{orderId} AND user_id = #{userId} AND status = 'CREATED' AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)")
-    int cancelIfExpired(@Param("orderId") Long orderId, @Param("userId") Long userId);
+    @Update("UPDATE orders SET status = 'CANCELLED' WHERE id = #{orderId} AND user_id = #{userId} AND status = 'CREATED'")
+    int cancelCreated(@Param("orderId") Long orderId, @Param("userId") Long userId);
 
-    @Update("UPDATE orders SET status = 'CANCELLED' WHERE user_id = #{userId} AND status = 'CREATED' AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)")
-    int cancelExpiredByUser(@Param("userId") Long userId);
+    @Select("SELECT id, order_no, user_id, total_amount, status, receiver_name, receiver_phone, user_address, paid_at, carrier, tracking_no, logistics_status, delivered_at, completed_at, reviewed, created_at FROM orders WHERE user_id = #{userId} AND status = 'CREATED'")
+    List<OrderEntity> findCreatedByUser(Long userId);
 }

@@ -122,6 +122,26 @@ public class ProductService {
         return new PageImpl<>(products, pageable, total);
     }
 
+    public List<Product> recommendSimilar(Long categoryId, List<Long> excludeIds, int limit) {
+        if (categoryId == null) {
+            List<Product> products = productMapper.findAllPaged(PageRequest.of(0, Math.max(1, Math.min(limit, 12))));
+            decorateProducts(products);
+            return products;
+        }
+        List<Product> products = productMapper.findByCategoryForRecommend(categoryId, excludeIds == null ? List.of() : excludeIds, Math.max(1, Math.min(limit, 12)));
+        if (products.size() < Math.min(limit, 12)) {
+            List<Long> excluded = products.stream().map(Product::getId).collect(Collectors.toList());
+            if (excludeIds != null) excluded.addAll(excludeIds);
+            List<Product> fallback = productMapper.findAllPaged(PageRequest.of(0, Math.max(1, Math.min(limit, 12))));
+            fallback.stream()
+                    .filter(product -> !excluded.contains(product.getId()))
+                    .limit(Math.max(0, Math.min(limit, 12) - products.size()))
+                    .forEach(products::add);
+        }
+        decorateProducts(products);
+        return products;
+    }
+
     public Product getDetail(Long id) {
         String cacheKey = PRODUCT_CACHE_KEY_PREFIX + id;
         String cacheVal;

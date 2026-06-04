@@ -86,14 +86,23 @@
 
     function seckillText(product) {
         if (!product.seckillEndAt || !product.seckillPrice) return "";
-        const end = new Date(product.seckillEndAt).getTime();
-        const start = product.seckillStartAt ? new Date(product.seckillStartAt).getTime() : 0;
+        const end = parseLocalTime(product.seckillEndAt);
+        const start = product.seckillStartAt ? parseLocalTime(product.seckillStartAt) : 0;
         const now = Date.now();
         if (now < start || now >= end) return "";
         const totalSeconds = Math.max(0, Math.floor((end - now) / 1000));
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         return hours > 0 ? `限时秒杀剩余 ${hours}小时${minutes}分钟` : `限时秒杀剩余 ${minutes}分钟`;
+    }
+
+    function parseLocalTime(value) {
+        if (!value) return NaN;
+        const text = String(value);
+        if (/[zZ]|[+-]\d{2}:\d{2}$/.test(text)) return new Date(text).getTime();
+        const match = text.replace("T", " ").match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (!match) return new Date(text).getTime();
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] || 0)).getTime();
     }
 
     async function search(page = 0) {

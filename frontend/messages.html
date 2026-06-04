@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分布式秒杀系统 - 消息邮箱</title>
+    <link rel="stylesheet" href="mall/css/neo-mall.css">
+</head>
+<body data-active="messages">
+<header class="site-header" id="siteHeader"></header>
+<main class="page mailbox-page">
+    <div class="section-head">
+        <div>
+            <h2>消息邮箱</h2>
+            <p>订单支付、物流更新、签收、评价、优惠券和活动通知都会集中在这里。</p>
+        </div>
+        <div class="toolbar">
+            <button class="btn ghost" id="markAllReadBtn" type="button">全部标为已读</button>
+            <button class="btn ghost" id="clearReadBtn" type="button">清空已读</button>
+        </div>
+    </div>
+    <section class="panel">
+        <div class="panel-body">
+            <div class="message-list message-list-page" id="messageList"></div>
+        </div>
+    </section>
+</main>
+<script src="mall/js/app-common.js"></script>
+<script>
+    const { $, $$, escapeHtml, emptyState, requireLogin, renderHeader, toast } = AppCommon;
+    const MESSAGE_KEY = "demo.message_box";
+
+    function readMessages() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(MESSAGE_KEY) || "[]");
+            return Array.isArray(saved) ? saved : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function saveMessages(messages) {
+        localStorage.setItem(MESSAGE_KEY, JSON.stringify(messages));
+    }
+
+    function renderMessages() {
+        const messages = readMessages();
+        $("#messageList").innerHTML = messages.length ? messages.map((message, index) => `
+            <article class="message-card ${message.read ? "read" : ""}" data-message="${index}">
+                <span>${escapeHtml(message.type || "system")}</span>
+                <strong>${escapeHtml(message.title)}</strong>
+                <p>${escapeHtml(message.content)}</p>
+                <small>${escapeHtml(message.time)}</small>
+            </article>
+        `).join("") : emptyState("暂无消息", "新的订单、物流和活动通知会出现在这里。");
+        $$(".message-card").forEach(card => {
+            card.addEventListener("click", () => {
+                const next = readMessages();
+                if (next[Number(card.dataset.message)]) next[Number(card.dataset.message)].read = true;
+                saveMessages(next);
+                renderMessages();
+                renderHeader("messages");
+            });
+        });
+    }
+
+    async function init() {
+        if (!requireLogin()) return;
+        await renderHeader("messages");
+        $("#markAllReadBtn").addEventListener("click", async () => {
+            saveMessages(readMessages().map(item => ({ ...item, read: true })));
+            renderMessages();
+            await renderHeader("messages");
+            toast("消息已全部标为已读", "success");
+        });
+        $("#clearReadBtn").addEventListener("click", async () => {
+            saveMessages(readMessages().filter(item => !item.read));
+            renderMessages();
+            await renderHeader("messages");
+            toast("已清空已读消息", "success");
+        });
+        renderMessages();
+    }
+
+    init();
+</script>
+</body>
+</html>

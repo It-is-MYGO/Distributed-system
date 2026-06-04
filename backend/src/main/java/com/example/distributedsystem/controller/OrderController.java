@@ -57,6 +57,11 @@ public class OrderController {
         return ResponseEntity.ok(orderService.review(authentication.getName(), orderId, request));
     }
 
+    @PostMapping("/{orderId}/followup")
+    public ResponseEntity<OrderEntity> followup(Authentication authentication, @PathVariable Long orderId, @Valid @RequestBody OrderReviewRequest request) {
+        return ResponseEntity.ok(orderService.followup(authentication.getName(), orderId, request));
+    }
+
     @GetMapping("/{orderId}/payment-status")
     public ResponseEntity<OrderEntity> paymentStatus(Authentication authentication, @PathVariable Long orderId) {
         return ResponseEntity.ok(orderService.detail(authentication.getName(), orderId));

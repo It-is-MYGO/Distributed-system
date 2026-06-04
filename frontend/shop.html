@@ -61,12 +61,14 @@
 
     function homeProductCard(product, index = 0) {
         const stock = Number(product.stock || 0);
-        const badge = index % 2 === 0 ? "自营" : "秒杀";
         const coupon = product.couponText || "商品好评率98%";
         const sales = Number(product.salesCount || 0);
         const rank = Number(product.categorySalesRank || 0);
         const hotTag = sales >= 2600 ? "热卖" : stock <= 20 ? "即将售罄" : rank && rank <= 2 ? "榜单好物" : "精选";
         const seckill = seckillText(product);
+        const activeSeckill = Boolean(seckill);
+        const currentPrice = activeSeckill ? Number(product.seckillPrice || product.price || 0) : Number(product.originalPrice || product.price || 0);
+        const badge = activeSeckill ? "秒杀" : (index % 2 === 0 ? "自营" : "精选");
         return `
             <article class="recommend-card">
                 <a class="recommend-media" href="/detail.html?productId=${product.id}">
@@ -77,17 +79,26 @@
                 ${seckill ? `<div class="seckill-countdown">${escapeHtml(seckill)}</div>` : ""}
                 <div class="recommend-sales"><span>已售 ${sales} 件</span>${rank ? `<strong>品类销量第 ${rank}</strong>` : ""}</div>
                 <div class="recommend-price">
-                    <strong>${formatMoney(product.price)}</strong>
+                    <strong>${formatMoney(currentPrice)}</strong>
                     <button class="add-plus js-add-cart" type="button" data-id="${product.id}" ${stock <= 0 ? "disabled" : ""} aria-label="加入购物车">+</button>
                 </div>
             </article>
         `;
     }
 
+    function parseLocalTime(value) {
+        if (!value) return NaN;
+        const text = String(value);
+        if (/[zZ]|[+-]\d{2}:\d{2}$/.test(text)) return new Date(text).getTime();
+        const match = text.replace("T", " ").match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (!match) return new Date(text).getTime();
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] || 0)).getTime();
+    }
+
     function seckillText(product) {
         if (!product.seckillEndAt || !product.seckillPrice) return "";
-        const end = new Date(product.seckillEndAt).getTime();
-        const start = product.seckillStartAt ? new Date(product.seckillStartAt).getTime() : 0;
+        const end = parseLocalTime(product.seckillEndAt);
+        const start = product.seckillStartAt ? parseLocalTime(product.seckillStartAt) : 0;
         const now = Date.now();
         if (now < start || now >= end) return "";
         const minutes = Math.max(0, Math.floor((end - now) / 60000));
@@ -97,6 +108,9 @@
     let bannerSlides = [];
     let bannerIndex = 0;
     let bannerTimer = null;
+    let allProducts = [];
+    let visibleCount = 0;
+    const PAGE_SIZE = 12;
 
     function renderHeroImages(list) {
         const images = list.length ? list.map((item, index) => productImage(item, index)) : ["mall/image/swiper/banner03.jpg"];
@@ -147,20 +161,38 @@
         bannerTimer = setInterval(() => showBanner(bannerIndex + 1), 3200);
     }
 
+    function renderMoreProducts() {
+        const next = allProducts.slice(visibleCount, visibleCount + PAGE_SIZE);
+        if (!next.length) return;
+        $("#productGrid").insertAdjacentHTML("beforeend", next.map((product, index) => homeProductCard(product, visibleCount + index)).join(""));
+        visibleCount += next.length;
+        bindAddToCart($("#productGrid"));
+    }
+
+    function bindInfiniteRecommend() {
+        window.addEventListener("scroll", () => {
+            if (visibleCount >= allProducts.length) return;
+            const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 360;
+            if (nearBottom) renderMoreProducts();
+        });
+    }
+
     async function loadHome() {
         await renderHeader("shop");
         $("#productGrid").innerHTML = loading("正在加载精选商品...");
         try {
             const products = await apiRequest("/product");
-            const list = Array.isArray(products) ? products : [];
-            $("#productMetric").textContent = list.length;
-            if (!list.length) {
+            allProducts = Array.isArray(products) ? products : [];
+            $("#productMetric").textContent = allProducts.length;
+            if (!allProducts.length) {
                 $("#productGrid").innerHTML = emptyState("暂无商品", "请先在商品管理页添加商品。", '<a class="btn primary" href="/product.html">去添加商品</a>');
                 return;
             }
-            renderHeroImages(list);
-            $("#productGrid").innerHTML = list.slice(0, 8).map(homeProductCard).join("");
-            bindAddToCart($("#productGrid"));
+            renderHeroImages(allProducts);
+            visibleCount = 0;
+            $("#productGrid").innerHTML = "";
+            renderMoreProducts();
+            bindInfiniteRecommend();
         } catch (error) {
             $("#productGrid").innerHTML = emptyState("商品加载失败", error.message);
         }

@@ -88,13 +88,20 @@ public class DemoDataInitializer implements CommandLineRunner {
         addColumnIfMissing("orders", "delivered_at", "ALTER TABLE orders ADD COLUMN delivered_at TIMESTAMP NULL");
         addColumnIfMissing("orders", "completed_at", "ALTER TABLE orders ADD COLUMN completed_at TIMESTAMP NULL");
         addColumnIfMissing("orders", "reviewed", "ALTER TABLE orders ADD COLUMN reviewed TINYINT DEFAULT 0");
-        addColumnIfMissing("user_account", "avatar_url", "ALTER TABLE user_account ADD COLUMN avatar_url VARCHAR(500)");
+        addColumnIfMissing("user_account", "avatar_url", "ALTER TABLE user_account ADD COLUMN avatar_url LONGTEXT");
+        jdbcTemplate.execute("ALTER TABLE user_account MODIFY COLUMN avatar_url LONGTEXT");
+        addColumnIfMissing("user_account", "email", "ALTER TABLE user_account ADD COLUMN email VARCHAR(120)");
+        addColumnIfMissing("user_account", "phone", "ALTER TABLE user_account ADD COLUMN phone VARCHAR(30)");
         addColumnIfMissing("product_review", "avatar_url", "ALTER TABLE product_review ADD COLUMN avatar_url VARCHAR(500)");
+        addColumnIfMissing("product_review", "order_id", "ALTER TABLE product_review ADD COLUMN order_id BIGINT");
+        addColumnIfMissing("product_review", "followup_content", "ALTER TABLE product_review ADD COLUMN followup_content VARCHAR(500)");
+        addColumnIfMissing("product_review", "followup_at", "ALTER TABLE product_review ADD COLUMN followup_at TIMESTAMP NULL");
         addColumnIfMissing("product", "sales_count", "ALTER TABLE product ADD COLUMN sales_count INT NOT NULL DEFAULT 0");
         addColumnIfMissing("product", "original_price", "ALTER TABLE product ADD COLUMN original_price DECIMAL(10,2)");
         addColumnIfMissing("product", "seckill_price", "ALTER TABLE product ADD COLUMN seckill_price DECIMAL(10,2)");
         addColumnIfMissing("product", "seckill_start_at", "ALTER TABLE product ADD COLUMN seckill_start_at TIMESTAMP NULL");
         addColumnIfMissing("product", "seckill_end_at", "ALTER TABLE product ADD COLUMN seckill_end_at TIMESTAMP NULL");
+        normalizeShoppingCartItems();
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS seckill_transaction_log (
                   id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -142,6 +149,48 @@ public class DemoDataInitializer implements CommandLineRunner {
                   used_at TIMESTAMP NULL
                 )
                 """);
+    }
+
+    private void normalizeShoppingCartItems() {
+        jdbcTemplate.update("DELETE FROM shopping_cart_item WHERE is_deleted = 1");
+        jdbcTemplate.update("""
+                UPDATE shopping_cart_item target
+                JOIN (
+                  SELECT user_id, product_id, MIN(id) AS keep_id, SUM(quantity) AS total_quantity
+                  FROM shopping_cart_item
+                  GROUP BY user_id, product_id
+                  HAVING COUNT(*) > 1
+                ) merged ON target.id = merged.keep_id
+                SET target.quantity = merged.total_quantity
+                """);
+        jdbcTemplate.update("""
+                DELETE target FROM shopping_cart_item target
+                JOIN (
+                  SELECT user_id, product_id, MIN(id) AS keep_id
+                  FROM shopping_cart_item
+                  GROUP BY user_id, product_id
+                  HAVING COUNT(*) > 1
+                ) merged ON target.user_id = merged.user_id
+                         AND target.product_id = merged.product_id
+                         AND target.id <> merged.keep_id
+                """);
+        if (!hasIndex("shopping_cart_item", "uk_cart_user_product")) {
+            jdbcTemplate.execute("ALTER TABLE shopping_cart_item ADD UNIQUE KEY uk_cart_user_product (user_id, product_id)");
+        }
+    }
+
+    private boolean hasIndex(String tableName, String indexName) {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
+                    Integer.class,
+                    tableName,
+                    indexName
+            );
+            return count != null && count > 0;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void addColumnIfMissing(String tableName, String columnName, String ddl) {
@@ -209,11 +258,18 @@ public class DemoDataInitializer implements CommandLineRunner {
     }
 
     private void seedCategories() {
-        if (!categoryMapper.findAll().isEmpty()) {
-            return;
-        }
-        List<String> names = List.of("数码办公", "智能家电", "美妆个护", "运动生活");
+        List<String> names = List.of(
+                "数码办公", "智能家电", "美妆个护", "运动生活",
+                "冰洗", "空调", "电视", "厨卫大电", "电脑", "办公", "文具用品",
+                "手机", "运营商", "数码", "生活电器", "厨房小电", "个护健康",
+                "食品", "酒类", "生鲜", "特产", "美妆", "个护清洁", "宠物",
+                "元器件", "劳保物资", "五金机电", "家装", "建材", "家具",
+                "家居日用", "厨具", "男鞋", "运动", "户外", "男装", "女装", "童装", "内衣"
+        );
         for (int i = 0; i < names.size(); i++) {
+            if (categoryIdByName(names.get(i)) != null) {
+                continue;
+            }
             Category category = new Category();
             category.setCategoryLevel(1);
             category.setParentId(0L);
@@ -265,6 +321,66 @@ public class DemoDataInitializer implements CommandLineRunner {
                 productService.create(toRequest(product));
             }
         });
+        seedCategoryKeywordProducts();
+    }
+
+    private void seedCategoryKeywordProducts() {
+        List<NamedSeedProduct> products = List.of(
+                new NamedSeedProduct("冰洗", "一级能效冰箱 520L", "风冷无霜、变频保鲜，适合家庭囤货。", "https://images.pexels.com/photos/5825576/pexels-photo-5825576.jpeg?auto=compress&cs=tinysrgb&w=900", "冰洗补贴", 2899, 46),
+                new NamedSeedProduct("空调", "新风变频空调 1.5 匹", "快速制冷制热，卧室客厅都适用。", "https://images.pexels.com/photos/7195853/pexels-photo-7195853.jpeg?auto=compress&cs=tinysrgb&w=900", "空调热卖", 2399, 58),
+                new NamedSeedProduct("电视", "MiniLED 智能电视 65 英寸", "高刷大屏，适合影音娱乐和主机游戏。", "https://images.pexels.com/photos/6976094/pexels-photo-6976094.jpeg?auto=compress&cs=tinysrgb&w=900", "电视新品", 3299, 41),
+                new NamedSeedProduct("厨卫大电", "嵌入式洗碗机 13 套", "高温除菌、节水洗涤，厨房升级精选。", "https://images.pexels.com/photos/1457841/pexels-photo-1457841.jpeg?auto=compress&cs=tinysrgb&w=900", "厨卫大电", 2599, 35),
+                new NamedSeedProduct("电脑", "游戏台式主机 RTX 套装", "高性能显卡和高速固态，适合游戏与设计。", "https://images.pexels.com/photos/2582937/pexels-photo-2582937.jpeg?auto=compress&cs=tinysrgb&w=900", "电脑热卖", 5999, 28),
+                new NamedSeedProduct("办公", "人体工学办公椅", "腰托可调，适合久坐学习办公。", "https://images.pexels.com/photos/1957478/pexels-photo-1957478.jpeg?auto=compress&cs=tinysrgb&w=900", "办公精选", 699, 120),
+                new NamedSeedProduct("文具用品", "考试文具收纳套装", "中性笔、便签和文件夹组合装。", "https://images.pexels.com/photos/590493/pexels-photo-590493.jpeg?auto=compress&cs=tinysrgb&w=900", "文具用品", 39, 260),
+                new NamedSeedProduct("手机", "轻薄影像手机 Pro", "高刷屏、长续航和夜景影像。", "https://images.pexels.com/photos/1092644/pexels-photo-1092644.jpeg?auto=compress&cs=tinysrgb&w=900", "手机秒杀", 3299, 64),
+                new NamedSeedProduct("运营商", "校园流量卡套餐", "大流量月包，适合学生和通勤用户。", "https://images.pexels.com/photos/404280/pexels-photo-404280.jpeg?auto=compress&cs=tinysrgb&w=900", "运营商", 59, 500),
+                new NamedSeedProduct("数码", "4K 运动相机", "防抖拍摄，适合旅行骑行记录。", "https://images.pexels.com/photos/1203808/pexels-photo-1203808.jpeg?auto=compress&cs=tinysrgb&w=900", "数码新品", 899, 90),
+                new NamedSeedProduct("生活电器", "除螨无线吸尘器", "轻量机身，多刷头清洁宿舍和家庭。", "https://images.pexels.com/photos/4107120/pexels-photo-4107120.jpeg?auto=compress&cs=tinysrgb&w=900", "生活电器", 799, 88),
+                new NamedSeedProduct("厨房小电", "多功能早餐机", "煎烤蒸煮一体，小户型厨房友好。", "https://images.pexels.com/photos/6287525/pexels-photo-6287525.jpeg?auto=compress&cs=tinysrgb&w=900", "厨房小电", 199, 150),
+                new NamedSeedProduct("个护健康", "智能筋膜按摩仪", "多档力度，运动后放松肩颈腿部。", "https://images.pexels.com/photos/4498482/pexels-photo-4498482.jpeg?auto=compress&cs=tinysrgb&w=900", "个护健康", 299, 110),
+                new NamedSeedProduct("食品", "坚果零食礼盒", "每日坚果、果干和饼干组合。", "https://images.pexels.com/photos/1295572/pexels-photo-1295572.jpeg?auto=compress&cs=tinysrgb&w=900", "食品热卖", 89, 320),
+                new NamedSeedProduct("酒类", "低度果酒礼盒", "微醺口感，聚餐礼赠都合适。", "https://images.pexels.com/photos/1283219/pexels-photo-1283219.jpeg?auto=compress&cs=tinysrgb&w=900", "酒类精选", 129, 90),
+                new NamedSeedProduct("生鲜", "冷链牛排组合", "原切牛排，冷链配送到家。", "https://images.pexels.com/photos/361184/asparagus-steak-veal-steak-veal-361184.jpeg?auto=compress&cs=tinysrgb&w=900", "生鲜冷链", 168, 70),
+                new NamedSeedProduct("特产", "地方糕点特产礼盒", "传统点心，节日送礼更体面。", "https://images.pexels.com/photos/1126359/pexels-photo-1126359.jpeg?auto=compress&cs=tinysrgb&w=900", "特产礼盒", 98, 160),
+                new NamedSeedProduct("美妆", "柔雾持妆粉底液", "自然遮瑕，通勤妆容持久。", "https://images.pexels.com/photos/3373746/pexels-photo-3373746.jpeg?auto=compress&cs=tinysrgb&w=900", "美妆精选", 159, 130),
+                new NamedSeedProduct("个护清洁", "家庭清洁洗护套装", "洗衣液、消毒液和清洁喷雾组合。", "https://images.pexels.com/photos/4239031/pexels-photo-4239031.jpeg?auto=compress&cs=tinysrgb&w=900", "个护清洁", 79, 260),
+                new NamedSeedProduct("宠物", "宠物自动喂食器", "定时定量投喂，适合猫狗家庭。", "https://images.pexels.com/photos/4587998/pexels-photo-4587998.jpeg?auto=compress&cs=tinysrgb&w=900", "宠物好物", 199, 95),
+                new NamedSeedProduct("元器件", "开发板传感器套件", "适合课程实验和物联网开发。", "https://images.pexels.com/photos/163100/circuit-circuit-board-resistor-computer-163100.jpeg?auto=compress&cs=tinysrgb&w=900", "元器件", 129, 180),
+                new NamedSeedProduct("劳保物资", "防护手套口罩套装", "车间实验室常备防护物资。", "https://images.pexels.com/photos/4483610/pexels-photo-4483610.jpeg?auto=compress&cs=tinysrgb&w=900", "劳保物资", 49, 400),
+                new NamedSeedProduct("五金机电", "家用电钻工具箱", "多批头组合，家具安装维修常用。", "https://images.pexels.com/photos/162553/keys-workshop-mechanic-tools-162553.jpeg?auto=compress&cs=tinysrgb&w=900", "五金机电", 299, 75),
+                new NamedSeedProduct("家装", "免打孔置物架套装", "浴室厨房通用，安装方便。", "https://images.pexels.com/photos/6585751/pexels-photo-6585751.jpeg?auto=compress&cs=tinysrgb&w=900", "家装精选", 69, 210),
+                new NamedSeedProduct("建材", "环保乳胶漆 5L", "低气味墙面翻新，覆盖力强。", "https://images.pexels.com/photos/5691622/pexels-photo-5691622.jpeg?auto=compress&cs=tinysrgb&w=900", "建材", 239, 65),
+                new NamedSeedProduct("家具", "北欧实木床头柜", "圆角设计，卧室收纳小家具。", "https://images.pexels.com/photos/1866149/pexels-photo-1866149.jpeg?auto=compress&cs=tinysrgb&w=900", "家具", 399, 48),
+                new NamedSeedProduct("家居日用", "四件套床品套装", "亲肤面料，可机洗易打理。", "https://images.pexels.com/photos/6315806/pexels-photo-6315806.jpeg?auto=compress&cs=tinysrgb&w=900", "家居日用", 199, 130),
+                new NamedSeedProduct("厨具", "不粘锅三件套", "煎炒炖多场景厨房套装。", "https://images.pexels.com/photos/6996095/pexels-photo-6996095.jpeg?auto=compress&cs=tinysrgb&w=900", "厨具", 259, 85),
+                new NamedSeedProduct("男鞋", "轻便休闲男鞋", "透气鞋面，日常通勤舒适。", "https://images.pexels.com/photos/19090/pexels-photo.jpg?auto=compress&cs=tinysrgb&w=900", "男鞋", 199, 140),
+                new NamedSeedProduct("运动", "速干运动 T 恤", "吸湿排汗，跑步健身适用。", "https://images.pexels.com/photos/3757376/pexels-photo-3757376.jpeg?auto=compress&cs=tinysrgb&w=900", "运动", 79, 300),
+                new NamedSeedProduct("户外", "露营折叠椅", "轻量便携，户外野餐露营可用。", "https://images.pexels.com/photos/6271625/pexels-photo-6271625.jpeg?auto=compress&cs=tinysrgb&w=900", "户外", 119, 120),
+                new NamedSeedProduct("男装", "基础款纯棉卫衣", "简洁版型，春秋通勤休闲。", "https://images.pexels.com/photos/6311390/pexels-photo-6311390.jpeg?auto=compress&cs=tinysrgb&w=900", "男装", 159, 190),
+                new NamedSeedProduct("女装", "通勤针织开衫", "柔软亲肤，办公室和日常都适合。", "https://images.pexels.com/photos/6311397/pexels-photo-6311397.jpeg?auto=compress&cs=tinysrgb&w=900", "女装", 169, 170),
+                new NamedSeedProduct("童装", "儿童连帽外套", "舒适保暖，校园日常穿搭。", "https://images.pexels.com/photos/5693891/pexels-photo-5693891.jpeg?auto=compress&cs=tinysrgb&w=900", "童装", 129, 130),
+                new NamedSeedProduct("内衣", "无痕基础内衣套装", "柔软面料，日常舒适穿着。", "https://images.pexels.com/photos/6311615/pexels-photo-6311615.jpeg?auto=compress&cs=tinysrgb&w=900", "内衣", 99, 160)
+        );
+        products.forEach(product -> {
+            Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM product WHERE name = ?", Integer.class, product.name());
+            if (count != null && count > 0) {
+                return;
+            }
+            Long categoryId = categoryIdByName(product.categoryName());
+            if (categoryId == null) {
+                return;
+            }
+            productService.create(toRequest(new SeedProduct(product.name(), product.description(), product.coverImage(), product.tag(), product.price(), categoryId, product.stock())));
+        });
+    }
+
+    private Long categoryIdByName(String name) {
+        return categoryMapper.findAll().stream()
+                .filter(category -> name.equals(category.getName()))
+                .map(Category::getId)
+                .findFirst()
+                .orElse(null);
     }
 
     private ProductCreateRequest toRequest(SeedProduct seed) {
@@ -435,9 +551,21 @@ public class DemoDataInitializer implements CommandLineRunner {
         jdbcTemplate.update("UPDATE product SET original_price = price WHERE original_price IS NULL");
         jdbcTemplate.update("""
                 UPDATE product
+                SET seckill_price = ROUND(original_price * 0.82, 2),
+                    seckill_start_at = DATE_SUB(NOW(), INTERVAL 10 MINUTE),
+                    seckill_end_at = DATE_ADD(NOW(), INTERVAL 36 HOUR),
+                    tag = '正在秒杀'
+                WHERE id IN (
+                  SELECT id FROM (
+                    SELECT id FROM product ORDER BY sales_count DESC LIMIT 4
+                  ) AS active_seckill_products
+                )
+                """);
+        jdbcTemplate.update("""
+                UPDATE product
                 SET seckill_price = ROUND(original_price * 0.86, 2),
                     seckill_start_at = DATE_SUB(NOW(), INTERVAL 30 MINUTE),
-                    seckill_end_at = DATE_ADD(NOW(), INTERVAL 6 HOUR)
+                    seckill_end_at = DATE_ADD(NOW(), INTERVAL 48 HOUR)
                 WHERE seckill_price IS NULL
                   AND (
                     tag LIKE '%秒杀%'
@@ -467,6 +595,17 @@ public class DemoDataInitializer implements CommandLineRunner {
             String tag,
             int price,
             Long categoryId,
+            int stock
+    ) {
+    }
+
+    private record NamedSeedProduct(
+            String categoryName,
+            String name,
+            String description,
+            String coverImage,
+            String tag,
+            int price,
             int stock
     ) {
     }

@@ -3,7 +3,9 @@ package com.example.distributedsystem.entity;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Data
 public class OrderEntity {
@@ -23,4 +25,20 @@ public class OrderEntity {
     private LocalDateTime completedAt;
     private Boolean reviewed;
     private LocalDateTime createdAt;
+
+    public LocalDateTime getPaymentExpiresAt() {
+        return createdAt == null ? null : createdAt.plusMinutes(15);
+    }
+
+    public Long getPaymentExpiresAtMillis() {
+        return createdAt == null ? null : createdAt.plusMinutes(15).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+    }
+
+    public Long getPaymentSecondsLeft() {
+        if (createdAt == null || !"CREATED".equalsIgnoreCase(status)) {
+            return 0L;
+        }
+        long seconds = Duration.between(LocalDateTime.now(), createdAt.plusMinutes(15)).getSeconds();
+        return Math.max(0L, seconds);
+    }
 }

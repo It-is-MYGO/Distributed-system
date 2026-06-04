@@ -5,7 +5,9 @@ CREATE TABLE IF NOT EXISTS user_account (
   nick_name VARCHAR(100),
   introduce_sign VARCHAR(255),
   address VARCHAR(255),
-  avatar_url VARCHAR(500),
+  avatar_url LONGTEXT,
+  email VARCHAR(120),
+  phone VARCHAR(30),
   role VARCHAR(20) NOT NULL DEFAULT 'USER',
   locked_flag TINYINT DEFAULT 0,
   is_deleted TINYINT DEFAULT 0,
@@ -55,10 +57,13 @@ CREATE TABLE IF NOT EXISTS product_detail_image (
 CREATE TABLE IF NOT EXISTS product_review (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   product_id BIGINT NOT NULL,
+  order_id BIGINT,
   username VARCHAR(100) NOT NULL,
   avatar_url VARCHAR(500),
   rating TINYINT NOT NULL DEFAULT 5,
   content VARCHAR(500) NOT NULL,
+  followup_content VARCHAR(500),
+  followup_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_product_review_product FOREIGN KEY (product_id) REFERENCES product(id)
 );
@@ -111,6 +116,7 @@ CREATE TABLE IF NOT EXISTS shopping_cart_item (
   is_deleted TINYINT DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_cart_user_product (user_id, product_id),
   CONSTRAINT fk_cart_user FOREIGN KEY (user_id) REFERENCES user_account(id),
   CONSTRAINT fk_cart_product FOREIGN KEY (product_id) REFERENCES product(id)
 );

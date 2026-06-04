@@ -59,6 +59,17 @@ public interface ProductMapper {
     @Select("SELECT COUNT(*) FROM product")
     long countAll();
 
+    @Select({"<script>",
+            "SELECT id, name, price, category_id, description, cover_image, carousel_images, tag, sales_count, original_price, seckill_price, seckill_start_at, seckill_end_at, status, created_at FROM product",
+            "WHERE category_id = #{categoryId}",
+            "<if test='excludeIds != null and excludeIds.size() > 0'>",
+            "AND id NOT IN",
+            "<foreach item='item' collection='excludeIds' open='(' separator=',' close=')'>#{item}</foreach>",
+            "</if>",
+            "ORDER BY sales_count DESC, id DESC LIMIT #{limit}",
+            "</script>"})
+    List<Product> findByCategoryForRecommend(@Param("categoryId") Long categoryId, @Param("excludeIds") List<Long> excludeIds, @Param("limit") int limit);
+
     @org.apache.ibatis.annotations.Update("UPDATE product SET sales_count = sales_count + #{quantity} WHERE id = #{productId}")
     int increaseSales(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 

@@ -36,13 +36,15 @@ public class TrafficGovernanceFilter extends OncePerRequestFilter {
         }
 
         long now = Instant.now().toEpochMilli();
-        if (configService.bool("traffic.circuit-breaker.enabled", true) && now < circuitOpenUntil) {
+        if (configService.bool("traffic.circuit-breaker.enabled", true) && now < circuitOpenUntil && !path.startsWith("/api/cart")) {
             writeGovernanceResponse(response, 503, "服务熔断中，请稍后重试", "CIRCUIT_OPEN");
             return;
         }
 
         if (configService.bool("traffic.rate-limit.enabled", true)) {
-            int permits = Math.max(1, configService.integer("traffic.rate-limit.permits-per-second", 35));
+            int permits = path.startsWith("/api/cart")
+                    ? 120
+                    : Math.max(1, configService.integer("traffic.rate-limit.permits-per-second", 35));
             TokenBucket bucket = buckets.computeIfAbsent(path, ignored -> new TokenBucket(permits));
             bucket.resize(permits);
             if (!bucket.tryAcquire()) {
@@ -53,13 +55,15 @@ public class TrafficGovernanceFilter extends OncePerRequestFilter {
 
         try {
             filterChain.doFilter(request, response);
-            if (response.getStatus() >= 500) {
+            if (response.getStatus() >= 500 && !path.startsWith("/api/cart")) {
                 recordFailure(path);
             } else {
                 failureCounter.updateAndGet(value -> Math.max(0, value - 1));
             }
         } catch (ServletException | IOException | RuntimeException ex) {
-            recordFailure(path);
+            if (!path.startsWith("/api/cart")) {
+                recordFailure(path);
+            }
             throw ex;
         }
     }

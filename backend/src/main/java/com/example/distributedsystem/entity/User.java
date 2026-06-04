@@ -14,6 +14,8 @@ public class User {
     private String introduceSign;
     private String address;
     private String avatarUrl;
+    private String email;
+    private String phone;
     private Boolean lockedFlag;
     private Boolean isDeleted;
     private LocalDateTime createdAt;

@@ -3,24 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>分布式秒杀系统 - 收银台</title>
+    <title>分布式秒杀系统 - 微信支付</title>
     <link rel="stylesheet" href="mall/css/neo-mall.css">
 </head>
-<body>
+<body data-active="orders">
+<header class="site-header" id="siteHeader"></header>
 <main class="page cashier-page">
-    <section class="cashier-shell">
-        <div class="panel-body">
-            <div class="empty-state">
-                <div class="loader"></div>
-                <p>正在进入统一收银台...</p>
-            </div>
-        </div>
+    <section class="cashier-qr-shell">
+        <div class="panel-body" id="payBody"></div>
     </section>
 </main>
+<script src="mall/js/app-common.js"></script>
 <script>
-    const params = new URLSearchParams(location.search);
-    const orderId = params.get("orderId") || "";
-    location.replace(`/pay-select.html${orderId ? `?orderId=${encodeURIComponent(orderId)}` : ""}`);
+    const { $, apiRequest, formatMoney, escapeHtml, requireLogin, loading, emptyState, renderHeader, toast } = AppCommon;
+    let order = null;
+
+    function orderId() {
+        return new URLSearchParams(location.search).get("orderId") || "";
+    }
+
+    function fakeQr(seed = "") {
+        const bits = Array.from({ length: 121 }, (_, index) => ((index * 23 + seed.length * 7 + seed.charCodeAt(index % Math.max(1, seed.length))) % 6) < 3);
+        return `<div class="fake-qr wx-qr">${bits.map(on => `<span class="${on ? "on" : ""}"></span>`).join("")}</div>`;
+    }
+
+    function render() {
+        $("#payBody").innerHTML = `
+            <div class="cashier-topline">
+                ${fakeQr(order.orderNo || "")}
+                <div>
+                    <h2>微信扫码支付</h2>
+                    <p>订单号：${escapeHtml(order.orderNo || "-")}</p>
+                    <p>请使用微信扫描二维码，确认后点击下方按钮完成模拟支付。</p>
+                </div>
+                <strong>${formatMoney(order.totalAmount)}</strong>
+            </div>
+            <div class="cashier-method-card">
+                <h3>微信支付</h3>
+                <div class="green-coupon">这是演示支付页，不会产生真实扣款。</div>
+                <div class="toolbar" style="margin-top:20px;">
+                    <button class="btn primary" id="confirmPayBtn" type="button">确认已支付</button>
+                    <a class="btn ghost" href="/pay-select.html?orderId=${order.id}">返回收银台</a>
+                </div>
+            </div>
+        `;
+        $("#confirmPayBtn").addEventListener("click", confirmPay);
+    }
+
+    async function confirmPay() {
+        try {
+            $("#confirmPayBtn").disabled = true;
+            order = await apiRequest(`/order/${order.id}/pay`, {
+                method: "POST",
+                body: JSON.stringify({ payMethod: "WECHAT" })
+            });
+            toast("微信支付成功", "success");
+            setTimeout(() => location.href = `/order-detail.html?orderId=${order.id}`, 600);
+        } catch (error) {
+            toast(`支付失败：${error.message}`, "error");
+            $("#confirmPayBtn").disabled = false;
+        }
+    }
+
+    async function init() {
+        if (!requireLogin()) return;
+        await renderHeader("orders");
+        const id = orderId();
+        if (!id) {
+            $("#payBody").innerHTML = emptyState("缺少订单 ID", "请从订单列表进入支付。");
+            return;
+        }
+        $("#payBody").innerHTML = loading("正在进入微信支付...");
+        try {
+            order = await apiRequest(`/order/${id}`);
+            render();
+        } catch (error) {
+            $("#payBody").innerHTML = emptyState("支付页加载失败", error.message);
+        }
+    }
+
+    init();
 </script>
 </body>
 </html>

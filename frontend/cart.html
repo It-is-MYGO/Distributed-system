@@ -25,6 +25,53 @@
 <script>
     const { $, $$, apiRequest, formatMoney, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader } = AppCommon;
     let cartItems = [];
+    const CART_CACHE_KEY = "demo.cart_cache";
+    const CART_HIDDEN_KEY = "demo.cart_hidden_ids";
+
+    function cacheCart() {
+        localStorage.setItem(CART_CACHE_KEY, JSON.stringify(cartItems));
+    }
+
+    function readHiddenIds() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(CART_HIDDEN_KEY) || "[]");
+            return new Set(Array.isArray(saved) ? saved.map(Number) : []);
+        } catch {
+            return new Set();
+        }
+    }
+
+    function rememberHiddenId(id) {
+        const ids = readHiddenIds();
+        ids.add(Number(id));
+        localStorage.setItem(CART_HIDDEN_KEY, JSON.stringify([...ids]));
+    }
+
+    function forgetHiddenId(id) {
+        const ids = readHiddenIds();
+        ids.delete(Number(id));
+        localStorage.setItem(CART_HIDDEN_KEY, JSON.stringify([...ids]));
+    }
+
+    function visibleItems(items) {
+        const hidden = readHiddenIds();
+        return (items || []).filter(item => !hidden.has(Number(item.id)));
+    }
+
+    function updateHeaderCartCountFromLocal() {
+        const countNode = document.querySelector(".site-nav a[href='/cart.html'] .count");
+        if (!countNode) return;
+        countNode.textContent = cartItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    }
+
+    function readCartCache() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(CART_CACHE_KEY) || "[]");
+            return Array.isArray(saved) ? saved : [];
+        } catch {
+            return [];
+        }
+    }
 
     function selectedIds() {
         return $$(".cart-check:checked").map(input => Number(input.value));
@@ -63,16 +110,22 @@
             const ids = selectedIds();
             if (!ids.length) return toast("请选择要结算的商品", "error");
             sessionStorage.setItem("checkout.cartItemIds", JSON.stringify(ids));
+            sessionStorage.removeItem("checkout.buyNow");
             location.href = "/order-settle.html";
         });
     }
 
     function renderCart() {
+        const layout = document.querySelector(".cart-layout");
         if (!cartItems.length) {
+            layout?.classList.add("empty-cart-layout");
             $("#cartList").innerHTML = emptyState("购物车是空的", "去挑几件商品再来结算。", '<a class="btn primary" href="/search.html">去逛逛</a>');
             $("#cartSummary").innerHTML = "";
+            $("#cartSummary").hidden = true;
             return;
         }
+        layout?.classList.remove("empty-cart-layout");
+        $("#cartSummary").hidden = false;
         $("#cartList").innerHTML = cartItems.map(item => `
             <div class="cart-item" data-id="${item.id}">
                 <input class="cart-check" type="checkbox" value="${item.id}" checked>
@@ -95,34 +148,56 @@
     }
 
     async function updateQuantity(id, quantity) {
+        const item = cartItems.find(entry => Number(entry.id) === Number(id));
+        if (!item) return;
+        const oldQuantity = Number(item.quantity || 1);
+        const nextQuantity = Math.max(1, quantity);
+        item.quantity = nextQuantity;
+        renderCart();
+        cacheCart();
+        updateHeaderCartCountFromLocal();
         try {
             await apiRequest("/cart", {
                 method: "PUT",
-                body: JSON.stringify({ cartItemId: Number(id), quantity: Math.max(1, quantity) })
+                body: JSON.stringify({ cartItemId: Number(id), quantity: nextQuantity })
             });
-            await loadCart();
-            toast("数量已更新", "success");
+            await renderHeader("cart");
         } catch (error) {
+            item.quantity = oldQuantity;
+            renderCart();
+            cacheCart();
+            updateHeaderCartCountFromLocal();
             toast(`更新失败：${error.message}`, "error");
         }
     }
 
     async function deleteItem(id) {
+        cartItems = cartItems.filter(item => Number(item.id) !== Number(id));
+        rememberHiddenId(id);
+        renderCart();
+        cacheCart();
+        updateHeaderCartCountFromLocal();
         try {
             await apiRequest(`/cart/${id}`, { method: "DELETE" });
-            await loadCart();
+            forgetHiddenId(id);
             await renderHeader("cart");
-            toast("已删除商品", "success");
         } catch (error) {
-            toast(`删除失败：${error.message}`, "error");
+            setTimeout(() => apiRequest(`/cart/${id}`, { method: "DELETE" }).then(() => forgetHiddenId(id)).catch(() => {}), 1200);
         }
     }
 
     async function loadCart() {
         if (!requireLogin()) return;
-        $("#cartList").innerHTML = loading("正在加载购物车...");
+        const cached = readCartCache();
+        if (cached.length) {
+            cartItems = visibleItems(cached);
+            renderCart();
+        } else {
+            $("#cartList").innerHTML = loading("正在加载购物车...");
+        }
         try {
-            cartItems = await apiRequest("/cart") || [];
+            cartItems = visibleItems(await apiRequest("/cart") || []);
+            cacheCart();
             renderCart();
         } catch (error) {
             $("#cartList").innerHTML = emptyState("购物车加载失败", error.message);

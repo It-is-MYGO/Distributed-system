@@ -29,11 +29,17 @@ public interface ShoppingCartMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(ShoppingCartItem shoppingCartItem);
 
+    @Update("UPDATE shopping_cart_item SET quantity = quantity + #{quantity}, is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE user_id = #{userId} AND product_id = #{productId}")
+    int increaseQuantity(@Param("userId") Long userId, @Param("productId") Long productId, @Param("quantity") Integer quantity);
+
     @Update("UPDATE shopping_cart_item SET quantity = #{quantity}, updated_at = CURRENT_TIMESTAMP WHERE id = #{id} AND user_id = #{userId}")
     int updateQuantity(ShoppingCartItem shoppingCartItem);
 
     @Delete("DELETE FROM shopping_cart_item WHERE id = #{id} AND user_id = #{userId}")
     int deleteByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
+
+    @Delete("DELETE FROM shopping_cart_item WHERE user_id = #{userId} AND product_id = #{productId}")
+    int deleteByUserIdAndProductId(@Param("userId") Long userId, @Param("productId") Long productId);
 
     @Delete({"<script>",
             "DELETE FROM shopping_cart_item WHERE user_id = #{userId} AND id IN",

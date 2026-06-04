@@ -45,6 +45,14 @@ public class ProductController {
         return ResponseEntity.ok(productService.search(keyword, page, size, orderBy));
     }
 
+    @GetMapping("/recommend/similar")
+    public ResponseEntity<List<Product>> recommend(
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) List<Long> excludeIds,
+            @RequestParam(defaultValue = "6") int limit) {
+        return ResponseEntity.ok(productService.recommendSimilar(categoryId, excludeIds, limit));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Product> detail(@PathVariable Long id) {
         Product product = productService.getDetail(id);

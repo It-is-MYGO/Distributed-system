@@ -42,6 +42,19 @@
     let currentOrder = null;
     let currentItems = [];
     let rating = 5;
+    let payTimer = null;
+    const MESSAGE_KEY = "demo.message_box";
+
+    function pushMessage(type, title, content) {
+        try {
+            const saved = JSON.parse(localStorage.getItem(MESSAGE_KEY) || "[]");
+            const messages = Array.isArray(saved) ? saved : [];
+            messages.unshift({ type, title, content, time: new Date().toLocaleString("zh-CN"), read: false });
+            localStorage.setItem(MESSAGE_KEY, JSON.stringify(messages.slice(0, 60)));
+        } catch {
+            localStorage.setItem(MESSAGE_KEY, JSON.stringify([{ type, title, content, time: new Date().toLocaleString("zh-CN"), read: false }]));
+        }
+    }
 
     function orderId() {
         return new URLSearchParams(location.search).get("orderId");
@@ -95,6 +108,40 @@
         `;
     }
 
+    function expireAt(order) {
+        if (order.paymentExpiresAtMillis) return Number(order.paymentExpiresAtMillis);
+        if (order.paymentSecondsLeft !== undefined && order.paymentSecondsLeft !== null) {
+            return Date.now() + Number(order.paymentSecondsLeft || 0) * 1000;
+        }
+        const created = new Date(order.createdAt).getTime();
+        return Number.isNaN(created) ? 0 : created + 15 * 60 * 1000;
+    }
+
+    function leftText(order) {
+        const left = Math.max(0, expireAt(order) - Date.now());
+        const minutes = Math.floor(left / 60000);
+        const seconds = Math.floor((left % 60000) / 1000);
+        return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    function startPayCountdown() {
+        if (payTimer) clearInterval(payTimer);
+        if (currentOrder.status !== "CREATED") return;
+        payTimer = setInterval(async () => {
+            const node = $("#orderPayCountdown");
+            if (!node) {
+                clearInterval(payTimer);
+                return;
+            }
+            node.textContent = leftText(currentOrder);
+            if (expireAt(currentOrder) <= Date.now()) {
+                clearInterval(payTimer);
+                currentOrder = await apiRequest(`/order/${currentOrder.id}`);
+                render();
+            }
+        }, 1000);
+    }
+
     function render() {
         const [title, desc, tone] = statusMeta(currentOrder);
         $("#detailRoot").innerHTML = `
@@ -102,7 +149,7 @@
                 <div>
                     <span>${title}</span>
                     <h1>${escapeHtml(currentOrder.orderNo)}</h1>
-                    <p>${desc}</p>
+                    <p>${currentOrder.status === "CREATED" ? `请在 <b id="orderPayCountdown">${leftText(currentOrder)}</b> 内完成支付，超时订单会自动取消。` : desc}</p>
                 </div>
                 <strong>${formatMoney(currentOrder.totalAmount)}</strong>
             </section>
@@ -131,10 +178,13 @@
         `;
         $("#receiveBtn")?.addEventListener("click", receiveOrder);
         $("#reviewBtn")?.addEventListener("click", openReview);
+        startPayCountdown();
     }
 
     async function receiveOrder() {
         currentOrder = await apiRequest(`/order/${currentOrder.id}/receive`, { method: "POST" });
+        pushMessage("receive", "签收提醒", `订单 ${currentOrder.orderNo} 已签收并变更为已完成。`);
+        pushMessage("review", "评价提醒", "已完成订单可以评价，超过一周未评价将自动五星好评。");
         toast("签收成功，订单已完成", "success");
         render();
     }
@@ -192,6 +242,7 @@
             method: "POST",
             body: JSON.stringify({ rating, content })
         });
+        pushMessage("review", "评价成功提醒", `订单 ${currentOrder.orderNo} 已提交 ${rating} 星评价。`);
         closeReview();
         toast("评价成功", "success");
         render();

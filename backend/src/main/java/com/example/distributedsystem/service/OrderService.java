@@ -22,6 +22,7 @@ import com.example.distributedsystem.mapper.ShoppingCartMapper;
 import com.example.distributedsystem.mapper.UserMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -45,6 +46,7 @@ public class OrderService {
     private final ShoppingCartMapper shoppingCartMapper;
     private final SnowflakeIdService snowflakeIdService;
     private final CouponMapper couponMapper;
+    private final StringRedisTemplate redisTemplate;
 
     public OrderService(
             UserMapper userMapper,
@@ -55,7 +57,8 @@ public class OrderService {
             OrderItemMapper orderItemMapper,
             ShoppingCartMapper shoppingCartMapper,
             SnowflakeIdService snowflakeIdService,
-            CouponMapper couponMapper
+            CouponMapper couponMapper,
+            StringRedisTemplate redisTemplate
     ) {
         this.userMapper = userMapper;
         this.productMapper = productMapper;
@@ -66,14 +69,12 @@ public class OrderService {
         this.shoppingCartMapper = shoppingCartMapper;
         this.snowflakeIdService = snowflakeIdService;
         this.couponMapper = couponMapper;
+        this.redisTemplate = redisTemplate;
     }
 
     @Transactional
     public OrderEntity createOrder(String username, OrderCreateRequest request) {
-        User user = userMapper.findByUsername(username);
-        if (user == null) {
-            throw new IllegalArgumentException("用户不存在");
-        }
+        User user = requireUser(username);
 
         Product product = productMapper.findById(request.getProductId());
         if (product == null) {
@@ -98,6 +99,7 @@ public class OrderService {
         order.setUserId(user.getId());
         order.setTotalAmount(applyCoupons(totalAmount, couponCodes(request.getCouponCode(), request.getCouponCodes()), user.getId(), List.of(product)));
         order.setStatus("CREATED");
+        order.setCreatedAt(LocalDateTime.now());
         fillReceiver(order, request.getReceiverName(), request.getReceiverPhone(), request.getAddress(), user);
         orderMapper.insert(order);
 
@@ -115,10 +117,7 @@ public class OrderService {
 
     @Transactional
     public OrderEntity checkoutCart(String username, CartCheckoutRequest request) {
-        User user = userMapper.findByUsername(username);
-        if (user == null) {
-            throw new IllegalArgumentException("用户不存在");
-        }
+        User user = requireUser(username);
         if (request.getCartItemIds() == null || request.getCartItemIds().isEmpty()) {
             throw new IllegalArgumentException("请选择要结算的购物车项");
         }
@@ -153,6 +152,7 @@ public class OrderService {
         order.setUserId(user.getId());
         order.setTotalAmount(applyCoupons(totalAmount, couponCodes(request.getCouponCode(), request.getCouponCodes()), user.getId(), products));
         order.setStatus("CREATED");
+        order.setCreatedAt(LocalDateTime.now());
         fillReceiver(order, request.getReceiverName(), request.getReceiverPhone(), request.getAddress(), user);
         orderMapper.insert(order);
 
@@ -173,16 +173,14 @@ public class OrderService {
         }
 
         shoppingCartMapper.deleteBatchByIds(user.getId(), request.getCartItemIds());
+        evictCartCache(user.getId());
         useCouponsIfPresent(couponCodes(request.getCouponCode(), request.getCouponCodes()), user.getId());
         return order;
     }
 
     public List<OrderEntity> myOrders(String username) {
-        User user = userMapper.findByUsername(username);
-        if (user == null) {
-            throw new IllegalArgumentException("用户不存在");
-        }
-        orderMapper.cancelExpiredByUser(user.getId());
+        User user = requireUser(username);
+        expireCreatedOrders(user);
         List<OrderEntity> orders = orderMapper.findByUserId(user.getId());
         orders.forEach(order -> refreshOrderProgress(order, user));
         return orderMapper.findByUserId(user.getId());
@@ -190,11 +188,12 @@ public class OrderService {
 
     public OrderEntity detail(String username, Long orderId) {
         User user = requireUser(username);
-        orderMapper.cancelIfExpired(orderId, user.getId());
         OrderEntity order = orderMapper.findByIdAndUserId(orderId, user.getId());
         if (order == null) {
             throw new IllegalArgumentException("订单不存在");
         }
+        expireOrderIfNeeded(order, user);
+        order = orderMapper.findByIdAndUserId(orderId, user.getId());
         refreshOrderProgress(order, user);
         order = orderMapper.findByIdAndUserId(orderId, user.getId());
         return order;
@@ -207,7 +206,7 @@ public class OrderService {
         if (order == null) {
             throw new IllegalArgumentException("订单不存在");
         }
-        orderMapper.cancelIfExpired(orderId, user.getId());
+        expireOrderIfNeeded(order, user);
         order = orderMapper.findByIdAndUserId(orderId, user.getId());
         if ("CANCELLED".equalsIgnoreCase(order.getStatus())) {
             throw new IllegalArgumentException("订单已超过15分钟支付时限，已自动作废");
@@ -266,11 +265,29 @@ public class OrderService {
         return orderMapper.findByIdAndUserId(orderId, user.getId());
     }
 
-    public CartPreviewResponse previewCheckout(String username, java.util.List<Long> cartItemIds) {
-        User user = userMapper.findByUsername(username);
-        if (user == null) {
-            throw new IllegalArgumentException("用户不存在");
+    @Transactional
+    public OrderEntity followup(String username, Long orderId, OrderReviewRequest request) {
+        User user = requireUser(username);
+        OrderEntity order = orderMapper.findByIdAndUserId(orderId, user.getId());
+        if (order == null) {
+            throw new IllegalArgumentException("订单不存在");
         }
+        if (!"COMPLETED".equalsIgnoreCase(order.getStatus()) || !Boolean.TRUE.equals(order.getReviewed())) {
+            throw new IllegalArgumentException("订单评价后才能追评");
+        }
+        List<OrderItem> items = orderItemMapper.findByOrderId(order.getId());
+        int updated = 0;
+        for (OrderItem item : items) {
+            updated += productReviewMapper.addFollowup(order.getId(), item.getProductId(), request.getContent());
+        }
+        if (updated <= 0) {
+            throw new IllegalArgumentException("该订单已追评或原评价不存在");
+        }
+        return orderMapper.findByIdAndUserId(orderId, user.getId());
+    }
+
+    public CartPreviewResponse previewCheckout(String username, java.util.List<Long> cartItemIds) {
+        User user = requireUser(username);
         if (cartItemIds == null || cartItemIds.isEmpty()) {
             throw new IllegalArgumentException("请选择要结算的购物车项");
         }
@@ -328,6 +345,7 @@ public class OrderService {
         if (order == null) {
             return;
         }
+        expireOrderIfNeeded(order, user);
         String status = String.valueOf(order.getStatus()).toUpperCase();
         if (("PAID".equals(status) || "SHIPPED".equals(status)) && order.getPaidAt() != null) {
             long minutes = Duration.between(order.getPaidAt(), LocalDateTime.now()).toMinutes();
@@ -351,6 +369,7 @@ public class OrderService {
         for (OrderItem item : items) {
             ProductReview review = new ProductReview();
             review.setProductId(item.getProductId());
+            review.setOrderId(order.getId());
             review.setUsername(user.getNickName() == null || user.getNickName().isBlank() ? user.getUsername() : user.getNickName());
             review.setAvatarUrl(user.getAvatarUrl());
             review.setRating(rating == null ? 5 : rating);
@@ -474,7 +493,24 @@ public class OrderService {
         if (user == null) {
             throw new IllegalArgumentException("用户不存在");
         }
+        if ("ADMIN".equalsIgnoreCase(user.getRole())) {
+            throw new IllegalArgumentException("管理员端不允许购买、支付或管理个人订单，请切换普通用户账号");
+        }
         return user;
+    }
+
+    private void expireCreatedOrders(User user) {
+        orderMapper.findCreatedByUser(user.getId()).forEach(order -> expireOrderIfNeeded(order, user));
+    }
+
+    private void expireOrderIfNeeded(OrderEntity order, User user) {
+        if (order == null || order.getCreatedAt() == null || !"CREATED".equalsIgnoreCase(order.getStatus())) {
+            return;
+        }
+        if (Duration.between(order.getCreatedAt(), LocalDateTime.now()).toMinutes() >= 15) {
+            orderMapper.cancelCreated(order.getId(), user.getId());
+            order.setStatus("CANCELLED");
+        }
     }
 
     private void fillReceiver(OrderEntity order, String receiverName, String receiverPhone, String address, User user) {
@@ -497,5 +533,12 @@ public class OrderService {
         order.setPaidAt(null);
         order.setCarrier("待支付后生成");
         order.setTrackingNo("待支付后生成");
+    }
+
+    private void evictCartCache(Long userId) {
+        try {
+            redisTemplate.delete("cart:items:" + userId);
+        } catch (Exception ignored) {
+        }
     }
 }

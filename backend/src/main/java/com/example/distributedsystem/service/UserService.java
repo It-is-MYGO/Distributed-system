@@ -82,6 +82,22 @@ public class UserService {
         if (request.getAvatarUrl() != null) {
             user.setAvatarUrl(request.getAvatarUrl());
         }
+        if (request.getEmail() != null) {
+            user.setEmail(request.getEmail());
+        }
+        if (request.getPhone() != null) {
+            user.setPhone(request.getPhone());
+        }
+        if (request.getNewPassword() != null && !request.getNewPassword().isBlank()) {
+            if (request.getVerifyCode() == null || !request.getVerifyCode().trim().equals("888888")) {
+                throw new IllegalArgumentException("验证码不正确，演示验证码为 888888");
+            }
+            if (request.getOldPassword() == null || !passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
+                throw new IllegalArgumentException("原密码不正确");
+            }
+            user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            userMapper.updatePassword(user);
+        }
         userMapper.update(user);
         user.setPassword(null);
         return user;

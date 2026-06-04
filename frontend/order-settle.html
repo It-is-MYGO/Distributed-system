@@ -54,11 +54,7 @@
 
             <section class="checkout-block recommend-lite">
                 <h2>顺手买更划算</h2>
-                <div class="mini-goods">
-                    <span>高速充电线 Type-C</span>
-                    <span>便携收纳袋</span>
-                    <span>清洁湿巾补充装</span>
-                </div>
+                <div class="mini-goods mini-recommend-goods" id="recommendGoods">${""}</div>
             </section>
         </div>
         <aside class="checkout-summary" id="settleSummary"></aside>
@@ -110,8 +106,9 @@
 
 <script src="mall/js/app-common.js"></script>
 <script>
-    const { $, $$, apiRequest, formatMoney, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader } = AppCommon;
+    const { $, $$, apiRequest, formatMoney, productImage, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader, bindAddToCart } = AppCommon;
     const ADDRESS_KEY = "demo.address_book";
+    let addressKey = ADDRESS_KEY;
     let checkoutIds = [];
     let checkoutMode = "cart";
     let preview = null;
@@ -119,6 +116,16 @@
     let selectedAddressIndex = -1;
     let addressExpanded = false;
     let selectedCouponCodes = [];
+
+    function clearLocalCartItems(ids = []) {
+        try {
+            const idSet = new Set(ids.map(Number));
+            const saved = JSON.parse(localStorage.getItem("demo.cart_cache") || "[]");
+            if (!Array.isArray(saved)) return;
+            localStorage.setItem("demo.cart_cache", JSON.stringify(saved.filter(item => !idSet.has(Number(item.id)))));
+        } catch {
+        }
+    }
 
     function readCheckoutIds() {
         try {
@@ -129,7 +136,15 @@
         }
     }
 
+    function isBuyNowMode() {
+        return new URLSearchParams(location.search).get("mode") === "buyNow";
+    }
+
     function readBuyNow() {
+        if (!isBuyNowMode()) {
+            sessionStorage.removeItem("checkout.buyNow");
+            return null;
+        }
         try {
             const saved = JSON.parse(sessionStorage.getItem("checkout.buyNow") || "null");
             return saved?.productId ? saved : null;
@@ -140,11 +155,16 @@
 
     function readAddresses() {
         try {
-            const saved = JSON.parse(localStorage.getItem(ADDRESS_KEY) || "[]");
+            const saved = JSON.parse(localStorage.getItem(addressKey) || "[]");
             return Array.isArray(saved) ? saved : [];
         } catch {
             return [];
         }
+    }
+
+    function setAddressOwner(user) {
+        const owner = user?.username || user?.id || "guest";
+        addressKey = `${ADDRESS_KEY}:${owner}`;
     }
 
     function currentReceiver() {
@@ -175,6 +195,7 @@
             <button class="address-tab ${index === selectedAddressIndex ? "active" : ""}" type="button" data-index="${index}">
                 <strong>${escapeHtml(item.receiverName)} ${escapeHtml(item.receiverPhone)}</strong>
                 <span>${escapeHtml(item.address)}</span>
+                <b class="address-delete" data-delete-address="${index}" title="删除">×</b>
             </button>
         `).join("") + `<button class="address-tab" type="button" id="appendAddress"><strong>+</strong><span>新增</span></button>`;
         $$(".address-tab[data-index]").forEach(tab => {
@@ -182,6 +203,18 @@
                 selectedAddressIndex = Number(tab.dataset.index);
                 fillReceiver(addresses[selectedAddressIndex]);
                 renderAddressBook();
+            });
+        });
+        $$("[data-delete-address]").forEach(button => {
+            button.addEventListener("click", event => {
+                event.stopPropagation();
+                const deleteIndex = Number(button.dataset.deleteAddress);
+                const next = readAddresses().filter((_, index) => index !== deleteIndex);
+                localStorage.setItem(addressKey, JSON.stringify(next));
+                selectedAddressIndex = Math.min(selectedAddressIndex, next.length - 1);
+                if (selectedAddressIndex >= 0) fillReceiver(next[selectedAddressIndex]);
+                renderAddressBook();
+                toast("已删除收货信息", "success");
             });
         });
         $("#appendAddress").addEventListener("click", openAddressModal);
@@ -207,7 +240,7 @@
             !(item.receiverName === address.receiverName && item.receiverPhone === address.receiverPhone && item.address === address.address)
         );
         addresses.unshift(address);
-        localStorage.setItem(ADDRESS_KEY, JSON.stringify(addresses.slice(0, 20)));
+        localStorage.setItem(addressKey, JSON.stringify(addresses.slice(0, 20)));
         selectedAddressIndex = 0;
         fillReceiver(address);
         renderAddressBook();
@@ -295,6 +328,35 @@
                 recalc();
             });
         });
+    }
+
+    async function loadSimilarRecommendations() {
+        const items = preview?.items || [];
+        const categoryId = items.find(item => item.categoryId)?.categoryId || "";
+        const excludeIds = items.map(item => Number(item.productId)).filter(Boolean);
+        $("#recommendGoods").innerHTML = `<span>正在推荐同品类商品...</span>`;
+        try {
+            const params = new URLSearchParams();
+            if (categoryId) params.set("categoryId", categoryId);
+            params.set("limit", "6");
+            excludeIds.forEach(id => params.append("excludeIds", id));
+            const products = await apiRequest(`/product/recommend/similar?${params}`);
+            $("#recommendGoods").innerHTML = products?.length ? products.map((product, index) => `
+                <article class="mini-good-card">
+                    <a href="/detail.html?productId=${product.id}">
+                        <img src="${escapeHtml(productImage(product, index))}" alt="${escapeHtml(product.name || "商品")}">
+                    </a>
+                    <div>
+                        <strong>${escapeHtml(product.name || "推荐商品")}</strong>
+                        <span>${formatMoney(product.price)}</span>
+                    </div>
+                    <button class="add-plus js-add-cart" type="button" data-id="${product.id}" ${Number(product.stock || 0) <= 0 ? "disabled" : ""} aria-label="加入购物车">+</button>
+                </article>
+            `).join("") : `<span>暂无相似商品推荐</span>`;
+            bindAddToCart($("#recommendGoods"));
+        } catch (error) {
+            $("#recommendGoods").innerHTML = `<span>相似商品加载失败：${escapeHtml(error.message)}</span>`;
+        }
     }
 
     function renderSummary() {
@@ -428,13 +490,20 @@
                 });
                 sessionStorage.removeItem("checkout.buyNow");
             } else {
+                await Promise.all((preview.items || []).map(item => apiRequest("/cart", {
+                    method: "PUT",
+                    body: JSON.stringify({ cartItemId: Number(item.id), quantity: Number(item.quantity || 1) })
+                })));
                 order = await apiRequest("/order/checkout", {
                     method: "POST",
                     body: JSON.stringify({ cartItemIds: checkoutIds, couponCodes: selectedCouponCodes, ...receiver })
                 });
+                clearLocalCartItems(checkoutIds);
                 sessionStorage.removeItem("checkout.cartItemIds");
             }
-            location.href = `/pay-select.html?orderId=${order.id}`;
+            sessionStorage.removeItem("checkout.pendingOrderId");
+            sessionStorage.setItem(`checkout.submittedAt:${order.id}`, String(Date.now()));
+            location.replace(`/pay-select.html?orderId=${order.id}&fromSubmit=1`);
         } catch (error) {
             toast(`提交失败：${error.message}`, "error");
             $("#submitBtn").disabled = false;
@@ -443,8 +512,8 @@
 
     async function init() {
         if (!requireLogin()) return;
+        sessionStorage.removeItem("checkout.pendingOrderId");
         await renderHeader("cart");
-        renderAddressBook();
         $("#toggleAddressBtn").addEventListener("click", () => {
             addressExpanded = !addressExpanded;
             renderAddressBook();
@@ -469,6 +538,8 @@
         $("#settleItems").innerHTML = loading("正在生成结算单...");
         try {
             const user = await apiRequest("/user/me");
+            setAddressOwner(user);
+            renderAddressBook();
             userCoupons = await apiRequest("/coupon/mine") || [];
             $("#userName").textContent = user ? `${user.nickName || user.username} 的收货信息` : "请填写收货信息";
             fillReceiver({ receiverName: user?.nickName || user?.username || "", receiverPhone: "", address: user?.address || "" });
@@ -501,6 +572,7 @@
                 });
             }
             recalc();
+            loadSimilarRecommendations();
         } catch (error) {
             $("#settleItems").innerHTML = emptyState("结算失败", error.message);
             $("#settleSummary").innerHTML = "";

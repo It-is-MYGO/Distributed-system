@@ -1,6 +1,7 @@
 ﻿const AppCommon = (() => {
     const API_BASE = "/api";
     const TOKEN_KEY = "demo.jwt_token";
+    const CART_CACHE_KEY = "demo.cart_cache";
     const FALLBACK_IMAGES = [
         "mall/image/sub_banner/r1.jpg",
         "mall/image/sub_banner/r2.jpg",
@@ -70,7 +71,14 @@
             }
             throw new Error(message);
         }
-        return response.status === 204 ? null : response.json();
+        if (response.status === 204) return null;
+        const text = await response.text();
+        if (!text || !text.trim()) return null;
+        try {
+            return JSON.parse(text);
+        } catch {
+            return text;
+        }
     }
 
     function formatMoney(value) {
@@ -96,6 +104,14 @@
     }
 
     function avatarFor(source = {}, fallback = "user") {
+        const username = source.username || fallback;
+        if (username) {
+            try {
+                const localAvatar = localStorage.getItem(`demo.local_avatar:${username}`);
+                if (localAvatar) return localAvatar;
+            } catch {
+            }
+        }
         const direct = source.avatarUrl || source.avatar || source.headImage;
         if (direct) return direct;
         const seed = encodeURIComponent(source.username || source.nickName || fallback || "user");
@@ -117,7 +133,7 @@
     function toast(message, type = "info") {
         const node = document.createElement("div");
         node.className = `toast toast-${type}`;
-        node.textContent = message;
+        node.innerHTML = `<span class="toast-dot"></span><strong>${escapeHtml(message)}</strong>`;
         document.body.appendChild(node);
         requestAnimationFrame(() => node.classList.add("show"));
         setTimeout(() => {
@@ -218,9 +234,26 @@
     async function loadCurrentUser() {
         if (!getToken()) return null;
         try {
-            return await apiRequest("/user/me");
+            const user = await apiRequest("/user/me");
+            if (user?.username) {
+                try {
+                    const localAvatar = localStorage.getItem(`demo.local_avatar:${user.username}`);
+                    if (localAvatar) user.avatarUrl = localAvatar;
+                } catch {
+                }
+            }
+            return user;
         } catch {
             return null;
+        }
+    }
+
+    function readMessages() {
+        try {
+            const saved = JSON.parse(localStorage.getItem("demo.message_box") || "[]");
+            return Array.isArray(saved) ? saved : [];
+        } catch {
+            return [];
         }
     }
 
@@ -229,6 +262,9 @@
         if (!host) return;
         const user = await loadCurrentUser();
         const count = await getCartCount();
+        const messages = user ? readMessages() : [];
+        const unreadCount = messages.filter(message => !message.read).length;
+        const latestMessages = messages.slice(0, 1);
         const keyword = new URLSearchParams(location.search).get("keyword") || "";
         host.innerHTML = `
             <div class="site-bar">
@@ -241,11 +277,29 @@
                     <button type="submit">搜索</button>
                 </form>
                 <nav class="site-nav">
-                    <a class="${active === "shop" ? "active" : ""}" href="/shop.html">首页</a>
-                    <a class="${active === "search" ? "active" : ""}" href="/search.html">分类</a>
-                    <a class="${active === "cart" ? "active" : ""}" href="/cart.html">购物车<span class="count">${count}</span></a>
-                    <a class="${active === "orders" ? "active" : ""}" href="/orders.html">订单</a>
-                    ${user?.role === "ADMIN" ? `<a class="${active === "admin" ? "active" : ""}" href="/product.html">商品管理</a>` : ""}
+                    ${user?.role === "ADMIN" ? `
+                        <a class="${active === "admin" ? "active" : ""}" href="/product.html">商品管理</a>
+                    ` : `
+                        <a class="${active === "shop" ? "active" : ""}" href="/shop.html">首页</a>
+                        <a class="${active === "search" ? "active" : ""}" href="/search.html">分类</a>
+                        <a class="${active === "cart" ? "active" : ""}" href="/cart.html">购物车<span class="count">${count}</span></a>
+                        <a class="${active === "orders" ? "active" : ""}" href="/orders.html">订单</a>
+                        <span class="nav-message-wrap">
+                            <a class="nav-bell ${active === "messages" ? "active" : ""}" href="/messages.html" aria-label="消息邮箱" title="消息邮箱">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+                                ${unreadCount ? `<span class="count">${unreadCount}</span>` : ""}
+                            </a>
+                            <span class="message-popover">
+                                <strong>最新一条消息</strong>
+                                ${latestMessages.length ? latestMessages.map(message => `
+                                    <span class="message-popover-item">
+                                        <b>${escapeHtml(message.title)}</b>
+                                        <small>${escapeHtml(message.content)}</small>
+                                    </span>
+                                `).join("") : `<span class="message-popover-empty">暂无新消息</span>`}
+                            </span>
+                        </span>
+                    `}
                     ${user ? `<a class="nav-user ${active === "personal" ? "active" : ""}" href="/personal.html"><img class="avatar avatar-sm" src="${escapeHtml(avatarFor(user))}" alt="${escapeHtml(user.nickName || user.username || "头像")}"><span>${escapeHtml(user.nickName || user.username)}</span></a><button class="link-button" id="logoutBtn">退出</button>` : `<a href="/index.html">登录</a><a href="/register.html">注册</a>`}
                 </nav>
             </div>
@@ -285,26 +339,71 @@
         `;
     }
 
+    const addCartQueue = new Map();
+
+    function updateLocalCartCount(delta) {
+        const countNode = document.querySelector(".site-nav a[href='/cart.html'] .count");
+        if (!countNode) return;
+        const current = Number(countNode.textContent || 0);
+        countNode.textContent = Math.max(0, current + delta);
+    }
+
+    function mergeLocalCart(productId, quantity) {
+        try {
+            const saved = JSON.parse(localStorage.getItem(CART_CACHE_KEY) || "[]");
+            if (!Array.isArray(saved)) return;
+            const item = saved.find(entry => Number(entry.productId) === Number(productId));
+            if (item) {
+                item.quantity = Number(item.quantity || 0) + Number(quantity || 1);
+                localStorage.setItem(CART_CACHE_KEY, JSON.stringify(saved));
+            }
+        } catch {
+        }
+    }
+
     function bindAddToCart(root = document) {
         $$(".js-add-cart", root).forEach((button) => {
+            if (button.dataset.cartBound === "1") return;
+            button.dataset.cartBound = "1";
             button.addEventListener("click", async () => {
                 if (!requireLogin({ afterLogin: () => button.click() })) return;
-                button.disabled = true;
+                queueAddToCart(button);
+            });
+        });
+    }
+
+    async function queueAddToCart(button) {
+        const productId = Number(button.dataset.id);
+        const key = String(productId);
+        const state = addCartQueue.get(key) || { pending: 0, running: false };
+        state.pending += 1;
+        addCartQueue.set(key, state);
+        updateLocalCartCount(1);
+        mergeLocalCart(productId, 1);
+        animateAddToCart(button);
+        toast("已加入购物车", "cart");
+        if (state.running) return;
+        state.running = true;
+        button.classList.add("is-adding");
+        try {
+            while (state.pending > 0) {
+                const quantity = state.pending;
+                state.pending = 0;
                 try {
                     await apiRequest("/cart", {
                         method: "POST",
-                        body: JSON.stringify({ productId: Number(button.dataset.id), quantity: 1 })
+                        body: JSON.stringify({ productId, quantity })
                     });
-                    animateAddToCart(button);
-                    toast("已加入购物车", "success");
-                    renderHeader(document.body.dataset.active || "shop");
                 } catch (error) {
                     toast(`添加失败：${error.message}`, "error");
-                } finally {
-                    button.disabled = false;
+                    break;
                 }
-            });
-        });
+            }
+            await renderHeader(document.body.dataset.active || "shop");
+        } finally {
+            state.running = false;
+            button.classList.remove("is-adding");
+        }
     }
 
     function animateAddToCart(button) {
@@ -313,7 +412,7 @@
         const target = cart?.getBoundingClientRect();
         const fly = document.createElement("span");
         fly.className = "cart-fly";
-        fly.textContent = "+";
+        fly.textContent = "";
         fly.style.left = `${rect.left + rect.width / 2}px`;
         fly.style.top = `${rect.top + rect.height / 2}px`;
         document.body.appendChild(fly);
@@ -326,10 +425,22 @@
         setTimeout(() => fly.remove(), 720);
     }
 
+    function lockBackNavigation() {
+        if (window.__mallBackLocked) return;
+        window.__mallBackLocked = true;
+        history.replaceState({ mallLockedBase: true }, "", location.href);
+        history.pushState({ mallLocked: true }, "", location.href);
+        window.addEventListener("popstate", () => {
+            setTimeout(() => history.forward(), 0);
+        });
+    }
+
+    setTimeout(lockBackNavigation, 0);
+
     return {
         $, $$, API_BASE, TOKEN_KEY, escapeHtml, getToken, setToken, removeToken, requireLogin,
         apiRequest, formatMoney, formatDate, productImage, avatarFor, mapStatus, toast, loading,
-        emptyState, showAuthModal, hideAuthModal, loadCurrentUser, renderHeader, productCard, bindAddToCart
+        emptyState, showAuthModal, hideAuthModal, loadCurrentUser, renderHeader, productCard, bindAddToCart, animateAddToCart, lockBackNavigation
     };
 })();
 

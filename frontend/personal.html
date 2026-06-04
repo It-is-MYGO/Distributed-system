@@ -12,9 +12,14 @@
     <div class="section-head">
         <div>
             <h2>个人中心</h2>
-            <p>维护昵称、签名和默认收货地址，结算时会自动带出。</p>
+            <p>维护头像、账号安全、联系方式和默认收货地址。</p>
         </div>
-        <a class="btn ghost" href="/orders.html">我的订单</a>
+        <div class="toolbar">
+            <a class="btn ghost" href="/orders.html">我的订单</a>
+            <a class="btn ghost" href="/messages.html">消息邮箱</a>
+            <a class="btn ghost" href="/password.html">修改密码</a>
+            <button class="btn ghost" id="switchAccountBtn" type="button">切换账号</button>
+        </div>
     </div>
     <section class="personal-layout">
         <div class="panel">
@@ -34,11 +39,22 @@
                     <label for="introduceSign">个性签名</label>
                     <input id="introduceSign" placeholder="请输入个性签名">
                 </div>
+                <input id="avatarUrl" type="hidden">
                 <div class="field">
-                    <label for="avatarUrl">头像地址</label>
-                    <input id="avatarUrl" placeholder="请输入头像 URL">
+                    <label for="avatarFile">本地上传头像</label>
+                    <input id="avatarFile" type="file" accept="image/*">
                 </div>
                 <div class="avatar-presets" id="avatarPresets"></div>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="email">绑定邮箱</label>
+                        <input id="email" placeholder="example@mail.com">
+                    </div>
+                    <div class="field">
+                        <label for="phone">绑定手机号</label>
+                        <input id="phone" placeholder="请输入手机号">
+                    </div>
+                </div>
                 <div class="field">
                     <label for="address">默认收货地址</label>
                     <textarea id="address" rows="4" placeholder="省市区、街道、门牌号"></textarea>
@@ -50,11 +66,19 @@
 </main>
 <script src="mall/js/app-common.js"></script>
 <script>
-    const { $, $$, apiRequest, avatarFor, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader } = AppCommon;
+    const { $, $$, apiRequest, avatarFor, escapeHtml, requireLogin, toast, loading, emptyState, renderHeader, removeToken } = AppCommon;
     let currentUser = null;
-    const avatarSeeds = ["student", "flash", "buyer", "seckill", "admin"];
+    let localAvatarData = "";
+    const avatarSeeds = ["buyer", "flash", "seckill", "market", "member"];
+    const MESSAGE_KEY = "demo.message_box";
 
     function renderProfile(user) {
+        try {
+            const cachedAvatar = user.username ? localStorage.getItem(`demo.local_avatar:${user.username}`) : "";
+            if (cachedAvatar) user.avatarUrl = cachedAvatar;
+        } catch {
+        }
+        const avatarLabel = String(user.avatarUrl || "").startsWith("data:image") ? "已上传本地头像" : (user.avatarUrl || "使用默认头像");
         $("#profileCards").innerHTML = `
             <div class="profile-hero">
                 <img class="avatar avatar-lg" id="profileAvatar" src="${escapeHtml(avatarFor(user))}" alt="${escapeHtml(user.nickName || user.username || "用户头像")}">
@@ -66,15 +90,37 @@
             <div class="profile-options">
                 <div class="profile-card"><strong>账号</strong><span>${escapeHtml(user.username || "未设置")}</span></div>
                 <div class="profile-card"><strong>角色</strong><span>${escapeHtml(user.role || "USER")}</span></div>
-                <div class="profile-card"><strong>头像</strong><span>${escapeHtml(user.avatarUrl || "使用默认头像")}</span></div>
+                <div class="profile-card"><strong>邮箱</strong><span>${escapeHtml(user.email || "未绑定")}</span></div>
+                <div class="profile-card"><strong>手机号</strong><span>${escapeHtml(user.phone || "未绑定")}</span></div>
+                <div class="profile-card"><strong>头像</strong><span>${escapeHtml(avatarLabel)}</span></div>
                 <div class="profile-card"><strong>默认地址</strong><span>${escapeHtml(user.address || "未设置")}</span></div>
             </div>
         `;
         $("#nickName").value = user.nickName || "";
         $("#introduceSign").value = user.introduceSign || "";
         $("#avatarUrl").value = user.avatarUrl || "";
+        $("#email").value = user.email || "";
+        $("#phone").value = user.phone || "";
         $("#address").value = user.address || "";
         renderAvatarPresets(user.avatarUrl);
+    }
+
+    function readMessages() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(MESSAGE_KEY) || "[]");
+            return Array.isArray(saved) ? saved : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function seedMessages() {
+        if (readMessages().length) return;
+        localStorage.setItem(MESSAGE_KEY, JSON.stringify([
+            { type: "coupon", title: "优惠券领取提醒", content: "新人平台券已发放，可在结算页选择优惠券使用。", time: new Date().toLocaleString("zh-CN"), read: false },
+            { type: "activity", title: "活动提醒", content: "限时秒杀专场开启，部分商品将在倒计时结束后恢复原价。", time: new Date().toLocaleString("zh-CN"), read: false },
+            { type: "logistics", title: "物流更新提醒", content: "支付后的订单会自动模拟出库、运输、到货和签收流程。", time: new Date().toLocaleString("zh-CN"), read: false }
+        ]));
     }
 
     function renderAvatarPresets(activeUrl = "") {
@@ -85,6 +131,7 @@
         $$(".avatar-preset").forEach(button => {
             button.addEventListener("click", () => {
                 $("#avatarUrl").value = button.dataset.url;
+                localAvatarData = "";
                 $$(".avatar-preset").forEach(item => item.classList.toggle("active", item === button));
                 $("#profileAvatar").src = button.dataset.url;
             });
@@ -104,19 +151,51 @@
     async function init() {
         if (!requireLogin()) return;
         await renderHeader("personal");
-        $("#avatarUrl").addEventListener("input", () => {
-            const value = $("#avatarUrl").value.trim();
-            if (value && $("#profileAvatar")) $("#profileAvatar").src = value;
+        seedMessages();
+        $("#switchAccountBtn").addEventListener("click", () => {
+            removeToken();
+            location.href = "/index.html?redirect=/personal.html";
+        });
+        $("#avatarFile").addEventListener("change", event => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                const image = new Image();
+                image.onload = () => {
+                    const size = 160;
+                    const canvas = document.createElement("canvas");
+                    canvas.width = size;
+                    canvas.height = size;
+                    const ctx = canvas.getContext("2d");
+                    const scale = Math.max(size / image.width, size / image.height);
+                    const width = image.width * scale;
+                    const height = image.height * scale;
+                    ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+                    const avatarData = canvas.toDataURL("image/jpeg", 0.72);
+                    localAvatarData = avatarData;
+                    $("#avatarUrl").value = avatarData;
+                    if ($("#profileAvatar")) $("#profileAvatar").src = avatarData;
+                };
+                image.src = reader.result;
+            };
+            reader.readAsDataURL(file);
         });
         $("#profileForm").addEventListener("submit", async event => {
             event.preventDefault();
             try {
+                if (localAvatarData && currentUser?.username) {
+                    localStorage.setItem(`demo.local_avatar:${currentUser.username}`, localAvatarData);
+                }
+                const avatarValue = $("#avatarUrl").value.trim();
                 await apiRequest("/user/me", {
                     method: "PUT",
                     body: JSON.stringify({
                         nickName: $("#nickName").value.trim(),
                         introduceSign: $("#introduceSign").value.trim(),
-                        avatarUrl: $("#avatarUrl").value.trim(),
+                        avatarUrl: avatarValue.startsWith("data:image") ? undefined : avatarValue,
+                        email: $("#email").value.trim(),
+                        phone: $("#phone").value.trim(),
                         address: $("#address").value.trim()
                     })
                 });
